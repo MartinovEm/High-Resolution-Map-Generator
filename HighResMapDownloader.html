@@ -1,0 +1,1159 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ethos High-Res Tile Generator</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <style>
+        :root { --viewport-bottom-offset: 0px; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; background-color: #121212; overflow: hidden; }
+        
+        ::selection { background: #87b025; color: #fff; }
+        ::-moz-selection { background: #87b025; color: #fff; }
+
+        #controls { width: 340px; min-width: 340px; background: #1e1e1e; color: #e0e0e0; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; border-right: 1px solid #333; box-shadow: 2px 0 5px rgba(0,0,0,0.5); z-index: 2000; transition: transform 0.3s ease; }
+        
+        @media (max-width: 1024px) {
+            #controls { position: absolute; left: 0; top: 0; bottom: 0; box-shadow: 5px 0 15px rgba(0,0,0,0.7); }
+            #controls.hidden { transform: translateX(-100%); }
+            #menu-toggle { display: block !important; }
+            .leaflet-top.leaflet-left { top: 52px; }
+        }
+
+        #menu-toggle { display: none; position: absolute; top: 10px; left: 10px; z-index: 2999; background: #87b025; color: white; border: none; border-radius: 4px; padding: 8px 12px; font-weight: bold; cursor: pointer; transition: left 0.3s ease; }
+
+        .header-main { margin-top: 5px; font-size: 21px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 15px; font-weight: bold; line-height: 1.2; text-transform: uppercase; }
+        .text-white { color: #ffffff; }
+        .text-green { color: #87b025; }
+
+        .label { font-size: 12px; text-transform: uppercase; color: #aaa; margin-bottom: 5px; font-weight: bold; }
+        #controls select, #controls input { width: 100%; padding: 10px; font-size: 14px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #fff; box-sizing: border-box; outline: none; transition: border 0.3s; }
+        #controls select:focus, #controls input:focus { border-color: #87b025; }
+
+        .zoom-row { display: flex; gap: 10px; width: 100%; }
+        .zoom-row > div { flex: 1; }
+        
+        #controls button { background: #87b025; color: white; font-weight: bold; font-size: 15px; cursor: pointer; padding: 12px; border: none; border-radius: 4px; transition: background 0.3s; margin-top: 5px; }
+        #controls button:hover { background: #71951f; }
+        #syncBtn { background: #87b025; color: white; font-weight: bold; font-size: 15px; cursor: pointer; padding: 12px; border: none; border-radius: 4px; transition: background 0.3s; margin-top: 5px; }
+        #syncBtn:hover { background: #71951f; }
+        
+        #linkSDBtn { background: #ff9800 !important; color: #000 !important; padding: 8px !important; font-size: 13px !important; }
+        #linkSDBtn:hover { background: #e68a00 !important; }
+        #linkSDBtn.linked { background: #4caf50 !important; color: #fff !important; }
+
+        .google-warning, .yaapu-warning { font-size: 11px; color: #ffeb3b; margin-top: -10px; display: none; padding: 8px; background: rgba(255,152,0,0.1); border-radius: 4px; border: 1px solid rgba(255,152,0,0.3); line-height: 1.4; }
+        .yaapu-warning { color: #ff5252; background: rgba(255, 82, 82, 0.1); border-color: rgba(255, 82, 82, 0.3); }
+
+        .toggle-container { display: flex; align-items: center; justify-content: space-between; background: #2a2a2a; padding: 10px; border-radius: 4px; border: 1px solid #444; }
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #87b025; }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        #syncDock { display: flex; flex-direction: column; gap: 8px; }
+        #syncDockMapHost { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); z-index: 1006; pointer-events: none; width: 300px; max-width: calc(100vw - 20px); }
+        #syncDock.map-dock { pointer-events: auto; background: rgba(30, 30, 30, 0.92); border: 2px solid #87b025; border-radius: 6px; padding: 10px; box-shadow: 0 0 12px rgba(0,0,0,0.55); }
+        #syncDock.map-dock #syncBtn { margin-top: 0; width: 100%; }
+        #syncDock.map-dock #status { margin-top: 0; min-height: auto; }
+        #map.sync-dock-visible #mouse-coords { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); }
+        #map.sync-dock-visible .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); }
+        #map:fullscreen #mouse-coords, #map:fullscreen #syncDockMapHost, #map:fullscreen .leaflet-bottom { --viewport-bottom-offset: 0px !important; }
+        #map:fullscreen.sync-dock-visible #mouse-coords { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
+        #map:fullscreen.sync-dock-visible .leaflet-bottom { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
+        
+        #status { font-size: 13px; color: #ffeb3b; text-align: center; margin-top: 10px; min-height: 20px; font-weight: bold;}
+        #map { position: relative; flex-grow: 1; height: 100%; background: #222; }
+        
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #87b025; font-size: 32px; font-weight: 300; z-index: 1000; pointer-events: none; line-height: 1; text-shadow: 0px 0px 3px rgba(0,0,0,0.8); transition: color 0.3s; }
+        .side-label { background: rgba(30, 30, 30, 0.8) !important; border: 1px solid #87b025 !important; border-radius: 3px !important; color: #fff !important; font-family: 'Consolas', monospace !important; font-size: 10px !important; padding: 3px 8px !important; white-space: nowrap !important; box-shadow: 0 0 5px rgba(0,0,0,0.5); pointer-events: none; text-align: center; min-width: 50px; }
+        .leaflet-control-geocoder-form input { color: #ffffff !important; background: #333 !important; font-size: 14px !important; height: 30px !important; padding: 0 8px !important; outline: none; border: none !important; margin: 0 !important; }
+        .leaflet-control-scale-line, #mouse-coords { background: rgba(0, 0, 0, 0.7) !important; color: #ffffff !important; border: 2px solid #87b025 !important; border-top: none !important; font-weight: bold !important; text-shadow: 1px 1px #000; transition: border-color 0.3s; box-sizing: border-box; height: 20px; display: flex; align-items: center; font-family: 'Consolas', monospace; font-size: 11px; z-index: 1002; padding: 0 8px; margin: 0; line-height: 1; }
+        .leaflet-control-scale-line { padding: 0 8px !important; margin: 0 !important; }
+        .leaflet-control-scale { padding: 0 !important; margin: 0 0 0 10px !important; }
+        .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)) !important; }
+        #map.sync-dock-visible .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)) !important; }
+        #mouse-coords { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); right: 10px; white-space: nowrap; }
+        .measuring-addon { border-right: 1px solid rgba(135, 176, 37, 0.5); margin-right: 10px; padding-right: 10px; color: #ffeb3b; }
+        
+        #zoom-display-map, #measure-btn-map, #fullscreen-btn-map { position: absolute; right: 10px; z-index: 1005; background: rgba(30, 30, 30, 0.9); color: #87b025; border: 2px solid #87b025; border-radius: 4px; font-weight: bold; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px; width: 101px; height: 26px; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
+        #zoom-display-map { top: 10px; pointer-events: none; }
+        #measure-btn-map { top: 44px; cursor: pointer; gap: 6px; }
+        #fullscreen-btn-map { top: 78px; cursor: pointer; }
+        #measure-btn-map.active { background: #87b025; color: #fff; border-color: #fff; }
+        /*
+         * Temporary viewport debug overlay kept for future mobile browser troubleshooting.
+         * Re-enable together with the matching HTML block and JS update block below.
+         */
+        /* #viewport-debug { position: absolute; top: 112px; right: 10px; z-index: 1007; background: rgba(0, 0, 0, 0.78); color: #87b025; border: 1px solid #87b025; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 10px; line-height: 1.35; padding: 6px 8px; white-space: pre-line; pointer-events: none; min-width: 145px; } */
+        .leaflet-control-geocoder { background: #333 !important; border: 2px solid #87b025 !important; border-radius: 4px !important; transition: border-color 0.3s; z-index: 2000 !important; }
+        .leaflet-control-geocoder-icon { filter: invert(1); width: 30px !important; height: 30px !important; }
+        
+        .leaflet-control-geocoder-alternatives { background: #ffffff !important; border: 1px solid #ccc !important; box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important; margin-top: 5px !important; padding: 0 !important; max-width: 320px !important; z-index: 10000 !important; position: absolute !important; }
+        .leaflet-control-geocoder-alternatives a { color: #000 !important; font-size: 13px !important; padding: 10px 14px !important; display: block !important; text-decoration: none !important; }
+        .leaflet-control-geocoder-alternatives a:hover, .leaflet-control-geocoder-selected { background-color: #87b025 !important; color: #ffffff !important; }
+
+        .leaflet-control-draw { margin-bottom: 0 !important; }
+        .leaflet-draw-toolbar { margin-top: -1px !important; background: #2a2a2a !important; border: 1px solid #444 !important; border-radius: 0 !important; overflow: hidden; }
+        .leaflet-draw-toolbar a { width: 34px !important; height: 34px !important; background-color: transparent !important; filter: invert(61%) sepia(85%) saturate(375%) hue-rotate(39deg) brightness(93%) contrast(89%); transition: filter 0.3s; }
+        .area-unit-control { margin-top: -1px !important; background: #2a2a2a !important; border: 1px solid #444 !important; border-radius: 0 0 4px 4px !important; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.65); }
+        .area-unit-control select { width: 34px !important; height: 34px !important; background: transparent; color: #87b025; border: none; font-weight: bold; font-size: 11px; cursor: pointer; outline: none; text-align: center; appearance: none; padding: 0; margin: 0; text-align-last: center; transition: color 0.3s;}
+        .location-control { margin-top: -1px !important; background: #2a2a2a !important; border: 1px solid #444 !important; border-radius: 0 0 4px 4px !important; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.65); }
+        .location-control .locate-control-btn { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: transparent; color: #87b025; border: none; padding: 0; margin: 0; cursor: pointer; outline: none; transition: color 0.3s; }
+        .location-control .locate-pin-svg { width: 20px; height: 20px; display: block; }
+        .location-control .pin-head { fill: currentColor; }
+        .location-control .pin-body { stroke: currentColor; stroke-width: 2.1; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .location-control .pin-core { fill: #1e1e1e; }
+        
+        #hud-measure-popup { position: absolute; top: 50%; left: 50%; transform: translate(25px, -25px); background: rgba(30, 30, 30, 0.7) !important; border: 2px solid #87b025 !important; border-radius: 4px !important; color: #fff !important; box-shadow: 0 0 10px rgba(0,0,0,0.5); padding: 4px 8px; z-index: 1001; font-family: 'Consolas', monospace; font-size: 12px; font-weight: bold; pointer-events: none; display: none; white-space: nowrap; }
+
+        .dark-contrast-theme .side-label, .dark-contrast-theme #hud-measure-popup, .dark-contrast-theme .leaflet-control-scale-line, .dark-contrast-theme #mouse-coords, .dark-contrast-theme #zoom-display-map, .dark-contrast-theme #measure-btn-map, .dark-contrast-theme #fullscreen-btn-map, .dark-contrast-theme .leaflet-control-geocoder { border-color: #ffffff !important; }
+        .dark-contrast-theme #crosshair, .dark-contrast-theme #zoom-display-map, .dark-contrast-theme #measure-btn-map, .dark-contrast-theme #fullscreen-btn-map { color: #ffffff !important; }
+        .dark-contrast-theme .measuring-addon { border-right-color: rgba(255, 255, 255, 0.5); color: #fff; }
+        .dark-contrast-theme #measure-btn-map.active { background: #ffffff !important; color: #000000 !important; }
+        .dark-contrast-theme .leaflet-draw-toolbar a { filter: invert(100%) !important; }
+        .dark-contrast-theme .area-unit-control select { color: #ffffff !important; background-color: #1e1e1e !important; }
+        .dark-contrast-theme .location-control .locate-control-btn { color: #ffffff !important; }
+
+        #syncOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center; }
+        #syncModal { background: #1e1e1e; border: 2px solid #87b025; color: #fff; width: 90%; max-width: 420px; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(135,176,37,0.3); }
+        #syncModal h3 { margin-top: 0; color: #87b025; text-align: center; }
+        .sync-info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; border-bottom: 1px solid #333; padding-bottom: 4px;}
+        .sync-info-row span:last-child { font-weight: bold; color: #ffeb3b; }
+        .progress-bar-bg { background: #333; width: 100%; height: 12px; border-radius: 6px; margin: 20px 0; overflow: hidden; }
+        #progressFill { background: #87b025; width: 0%; height: 100%; transition: width 0.1s; }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 15px; }
+        .modal-buttons button { flex: 1; padding: 12px; cursor: pointer; border-radius: 4px; font-weight: bold; border: none; }
+        .btn-cancel { background: #444; color: #fff; }
+        .btn-confirm { background: #87b025; color: #fff; }
+        .overwrite-opt { margin-top: 10px; font-size: 13px; color: #aaa; display: flex; align-items: center; gap: 8px; }
+    </style>
+</head>
+<body>
+
+    <button id="menu-toggle" onclick="toggleMenu()">☰</button>
+
+    <div id="controls" class="hidden">
+        <div class="header-main"><span class="text-white">HIGH-RES</span> <span class="text-green">MAP GENERATOR</span></div>
+        <button id="linkSDBtn" onclick="linkSDCard()">📂 Link SD Card</button>
+        
+        <div class="toggle-container">
+            <span class="label" style="margin:0;">💾 Remember Settings</span>
+            <label class="switch">
+                <input type="checkbox" id="saveSettingsToggle" onchange="toggleSaveSettings()">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div>
+            <div class="label">Output Target Widget</div>
+            <select id="targetWidget" onchange="syncMapOptions(); saveSettings();">
+                <option value="b14ckyy">b14ckyy ETHOS Mapping Widget</option>
+                <option value="yaapu">Yaapu</option>
+            </select>
+        </div>
+        <div>
+            <div class="label">Provider</div>
+            <select id="provider" onchange="syncMapOptions(); switchMapLayer(); saveSettings();">
+                <option value="OSM" selected>Standard Map (OSM) - Non High-Res</option>
+                <option value="ESRI">ESRI High-Res</option>
+                <option value="GOOGLE">Google High-Res</option>
+            </select>
+        </div>
+        <div><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
+        <div id="googleWarning" class="google-warning">⚠️ Warning: Google might temporarily ban IPs aftre bulk downloads for 24 hours.</div>
+        <div id="yaapuWarning" class="yaapu-warning"></div>
+        <hr style="width: 100%; border-color: #333; margin: 5px 0;">
+        <div><div class="label">Project Folder Name</div><input type="text" id="projectName" value="MyLocalField" oninput="saveSettings()"></div>
+        
+        <div class="zoom-row">
+            <div>
+                <div class="label">Min Zoom</div>
+                <select id="minZoom" onchange="triggerUpdate(); saveSettings();"></select>
+            </div>
+            <div>
+                <div class="label">Max Zoom</div>
+                <select id="maxZoom" onchange="triggerUpdate(); saveSettings();"></select>
+            </div>
+        </div>
+
+        <div class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
+        <div id="syncDock">
+            <button id="syncBtn" onclick="startSync()">⚡ Sync to SD Card</button>
+            <div id="status">Search or zoom to your field...</div>
+        </div>
+        <button id="restoreBtn" onclick="restoreSettings()" style="padding: 6px 10px; font-size: 12px; background: #ff4444; color: white;">🔄 Restore Settings</button>
+    </div>
+
+    <div id="map" oncontextmenu="return false;">
+        <div id="crosshair">+</div>
+        <div id="hud-measure-popup">0m / 0ft</div>
+        <div id="syncDockMapHost"></div>
+        <div id="mouse-coords"><span id="measure-output" class="measuring-addon" style="display:none">0m / 0ft</span><span id="coords-output">Lat: 0.0000, Lng: 0.0000</span></div>
+        <div id="zoom-display-map">Zoom: 12</div>
+        <div id="measure-btn-map" onclick="toggleMeasure()">📏 Measure</div>
+        <div id="fullscreen-btn-map" onclick="toggleFullscreen()">⛶ Fullscreen</div>
+        <!-- Temporary viewport debug overlay kept for future mobile browser troubleshooting. -->
+        <!-- <div id="viewport-debug">vv: waiting…</div> -->
+    </div>
+
+    <div id="syncOverlay">
+        <div id="syncModal">
+            <h3 id="modalHeader">Syncing to SD Card</h3>
+            <div id="syncInfo"></div>
+            <div id="overwriteSection" class="overwrite-opt"><input type="checkbox" id="overwriteToggle" style="width:16px; height:16px;"><label for="overwriteToggle">Force Overwrite (Update) existing tiles</label></div>
+            <div id="progressSection" style="display:none;">
+                <div class="progress-bar-bg"><div id="progressFill"></div></div>
+                <div id="downloadStatus" style="font-size: 11px; text-align: center; color: #aaa; margin-top: -15px; margin-bottom: 10px;">Ready...</div>
+                <div class="modal-buttons"><button class="btn-cancel" onclick="abortSync()">Cancel</button></div>
+            </div>
+            <div class="modal-buttons" id="modalActions">
+                <button class="btn-cancel" onclick="closeSync()">Cancel</button>
+                <button id="mainConfirmBtn" class="btn-confirm" onclick="handleConfirmClick()">Confirm Sync</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="resizeCanvas" width="100" height="100" style="display:none;"></canvas>
+
+    <script>
+        /*
+         * MapDownloader is a self-contained offline map export tool.
+         * The code below is organized into five main areas:
+         * 1. UI state and responsive layout handling
+         * 2. Map setup, layer switching, and drawing controls
+         * 3. Utility tools such as location lookup and measurement
+         * 4. Tile download, resize, retry, and export pipeline
+         * 5. App bootstrap and event wiring
+         */
+
+        /* Persist the user's working configuration between sessions when enabled. */
+        function saveSettings() {
+            if (!document.getElementById('saveSettingsToggle').checked) return;
+            const settings = {
+                targetWidget: document.getElementById('targetWidget').value,
+                provider: document.getElementById('provider').value,
+                mapType: document.getElementById('mapTypeChoice').value,
+                projectName: document.getElementById('projectName').value,
+                minZoom: document.getElementById('minZoom').value,
+                maxZoom: document.getElementById('maxZoom').value,
+                mapCenter: map.getCenter(),
+                mapZoom: map.getZoom(),
+                rememberOn: true
+            };
+            localStorage.setItem('mapGenSettings', JSON.stringify(settings));
+        }
+
+        /* Restore the previously saved session state and rebuild dependent UI selections. */
+        function loadSettings() {
+            const saved = localStorage.getItem('mapGenSettings');
+            if (!saved) return;
+            const s = JSON.parse(saved);
+            
+            document.getElementById('saveSettingsToggle').checked = s.rememberOn || false;
+            if (!s.rememberOn) return;
+
+            if(s.targetWidget) document.getElementById('targetWidget').value = s.targetWidget;
+            if(s.provider) document.getElementById('provider').value = s.provider;
+            
+            syncMapOptions();
+            if(s.mapType) document.getElementById('mapTypeChoice').value = s.mapType;
+            if(s.projectName) document.getElementById('projectName').value = s.projectName;
+            if(s.minZoom) document.getElementById('minZoom').value = s.minZoom;
+            if(s.maxZoom) document.getElementById('maxZoom').value = s.maxZoom;
+            
+            if(s.mapCenter) map.setView([s.mapCenter.lat, s.mapCenter.lng], s.mapZoom || 12);
+            switchMapLayer();
+        }
+
+        /* Enable or disable persistent settings storage from the UI toggle. */
+        function toggleSaveSettings() {
+            if (!document.getElementById('saveSettingsToggle').checked) {
+                localStorage.removeItem('mapGenSettings');
+            } else {
+                saveSettings();
+            }
+        }
+
+        /* Restore settings to defaults immediately. */
+        function restoreSettings() {
+            localStorage.removeItem('mapGenSettings');
+            document.getElementById('saveSettingsToggle').checked = false;
+            document.getElementById('targetWidget').value = 'b14ckyy';
+            document.getElementById('provider').value = 'OSM';
+            syncMapOptions();
+            document.getElementById('mapTypeChoice').value = 'Street';
+            document.getElementById('projectName').value = 'MyLocalField';
+            document.getElementById('minZoom').value = '8';
+            document.getElementById('maxZoom').value = '14';
+            map.setView([42.6977, 23.3219], 12);
+            switchMapLayer();
+        }
+
+        /* Responsive layout helpers keep the side panel usable on smaller screens. */
+        function isResponsiveMenuMode() {
+            return window.innerWidth <= 1024;
+        }
+
+        /* Keep the hamburger button visually attached to the sliding menu edge. */
+        function updateMenuTogglePosition() {
+            const controls = document.getElementById('controls');
+            const menuToggle = document.getElementById('menu-toggle');
+            if (!controls || !menuToggle) return;
+
+            if (!isResponsiveMenuMode() || controls.classList.contains('hidden')) {
+                menuToggle.style.left = '10px';
+                return;
+            }
+
+            menuToggle.style.left = `${controls.offsetWidth + 10}px`;
+        }
+
+        /*
+         * Align the floating sync dock with the bottom status controls and raise it
+         * only when it would collide with the scale or coordinate boxes.
+         */
+        function updateSyncDockBottomAlignment() {
+            const map = document.getElementById('map');
+            const mapHost = document.getElementById('syncDockMapHost');
+            const coords = document.getElementById('mouse-coords');
+            const scaleLine = document.querySelector('.leaflet-control-scale-line');
+            if (!map || !mapHost || !coords) return;
+
+            if (!map.classList.contains('sync-dock-visible')) {
+                mapHost.style.bottom = '';
+                return;
+            }
+
+            const baselineBottom = parseFloat(getComputedStyle(coords).bottom) || 10;
+            mapHost.style.bottom = `${baselineBottom}px`;
+
+            const mapHostRect = mapHost.getBoundingClientRect();
+            const blockers = [coords, scaleLine].filter(Boolean);
+            const minGap = 8;
+            let requiredLift = 0;
+
+            blockers.forEach(blocker => {
+                const blockerRect = blocker.getBoundingClientRect();
+                const overlapsHorizontally = mapHostRect.left < blockerRect.right && mapHostRect.right > blockerRect.left;
+                const overlapsVertically = mapHostRect.top < blockerRect.bottom && mapHostRect.bottom > blockerRect.top;
+
+                if (overlapsHorizontally && overlapsVertically) {
+                    const lift = mapHostRect.bottom - (blockerRect.top - minGap);
+                    if (lift > requiredLift) requiredLift = lift;
+                }
+            });
+
+            if (requiredLift > 0) {
+                mapHost.style.bottom = `${baselineBottom + requiredLift}px`;
+            }
+        }
+
+        /* Move the sync action between the side panel and the map overlay based on layout mode. */
+        function updateSyncDockPlacement() {
+            const controls = document.getElementById('controls');
+            const map = document.getElementById('map');
+            const mapHost = document.getElementById('syncDockMapHost');
+            const syncDock = document.getElementById('syncDock');
+            if (!controls || !map || !mapHost || !syncDock) return;
+
+            if (isResponsiveMenuMode()) {
+                if (syncDock.parentElement !== mapHost) mapHost.appendChild(syncDock);
+                syncDock.classList.add('map-dock');
+                map.classList.add('sync-dock-visible');
+                updateSyncDockBottomAlignment();
+            } else {
+                if (syncDock.parentElement !== controls) controls.appendChild(syncDock);
+                syncDock.classList.remove('map-dock');
+                map.classList.remove('sync-dock-visible');
+                mapHost.style.bottom = '';
+            }
+        }
+
+        /*
+         * Compute extra bottom spacing for mobile browser chrome.
+         * The preferred source is VisualViewport measurement; browser-specific fallbacks
+         * remain in place for cases where the viewport API reports no occlusion.
+         */
+        function updateViewportBottomOffset() {
+            const root = document.documentElement;
+            const vv = window.visualViewport;
+            const EDGE_ANDROID_PORTRAIT_FALLBACK = 140;
+            const EDGE_ANDROID_LANDSCAPE_FALLBACK = 64;
+            const CHROME_ANDROID_FALLBACK = 50;
+            if (!root) return;
+
+            if (document.fullscreenElement) {
+                root.style.setProperty('--viewport-bottom-offset', '0px');
+                return;
+            }
+
+            const ua = navigator.userAgent || '';
+            const isEdgeAndroid = /EdgA/i.test(ua) && /Android/i.test(ua);
+            const isChromeAndroid = /Chrome/i.test(ua) && /Android/i.test(ua) && !/EdgA/i.test(ua);
+            const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+
+            let coordsOffset = 0;
+            let measuredBottomOcclusion = 0;
+            let offsetSource = 'none';
+
+            if (isResponsiveMenuMode()) {
+                if (vv) {
+                    const layoutH = window.innerHeight || 0;
+                    const visualBottom = (vv.offsetTop || 0) + (vv.height || 0);
+                    measuredBottomOcclusion = Math.max(0, Math.round(layoutH - visualBottom));
+                }
+
+                if (measuredBottomOcclusion > 0) {
+                    coordsOffset = measuredBottomOcclusion;
+                    offsetSource = 'visualViewport';
+                } else if (isEdgeAndroid) {
+                    coordsOffset = isLandscape ? EDGE_ANDROID_LANDSCAPE_FALLBACK : EDGE_ANDROID_PORTRAIT_FALLBACK;
+                    offsetSource = isLandscape ? 'edge-landscape-fallback' : 'edge-portrait-fallback';
+                } else if (isChromeAndroid) {
+                    coordsOffset = CHROME_ANDROID_FALLBACK;
+                    offsetSource = 'chrome-fallback';
+                }
+            }
+
+            root.style.setProperty('--viewport-bottom-offset', `${coordsOffset}px`);
+
+            /*
+             * Temporary viewport debug overlay kept for future troubleshooting.
+             * Re-enable this block together with the matching CSS and HTML snippets above.
+             */
+            /*
+            const debug = document.getElementById('viewport-debug');
+            if (debug) {
+                const vvHeight = vv ? Math.round(vv.height || 0) : 0;
+                const vvTop = vv ? Math.round(vv.offsetTop || 0) : 0;
+                const mode = isLandscape ? 'landscape' : 'portrait';
+                const browser = isEdgeAndroid ? 'EdgeA' : (isChromeAndroid ? 'ChromeA' : 'other');
+                debug.textContent = [
+                    `mode: ${mode}`,
+                    `browser: ${browser}`,
+                    `vv.h/top: ${vvHeight}/${vvTop}`,
+                    `occ.bottom: ${measuredBottomOcclusion}px`,
+                    `offset: ${coordsOffset}px`,
+                    `source: ${offsetSource}`
+                ].join('\n');
+            }
+            */
+
+            updateSyncDockBottomAlignment();
+        }
+
+        /* Toggle the responsive side panel manually from the hamburger button. */
+        function toggleMenu() {
+            document.getElementById('controls').classList.toggle('hidden');
+            updateMenuTogglePosition();
+        }
+
+        /* Re-evaluate all layout-dependent UI pieces whenever viewport state changes. */
+        function checkResponsiveMenu() {
+            if (isResponsiveMenuMode()) {
+                document.getElementById('controls').classList.add('hidden');
+            } else {
+                document.getElementById('controls').classList.remove('hidden');
+            }
+            updateMenuTogglePosition();
+            updateSyncDockPlacement();
+            updateViewportBottomOffset();
+            updateSyncDockBottomAlignment();
+        }
+        window.addEventListener('resize', checkResponsiveMenu);
+        window.addEventListener('orientationchange', checkResponsiveMenu);
+        document.addEventListener('fullscreenchange', checkResponsiveMenu);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateViewportBottomOffset);
+            window.visualViewport.addEventListener('scroll', updateViewportBottomOffset);
+        }
+
+        /* Enter or exit fullscreen map mode. */
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`Error attempting to enable full-screen mode: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        /* Build the zoom selectors once at startup. */
+        const minZSelect = document.getElementById('minZoom'), maxZSelect = document.getElementById('maxZoom');
+        for (let i = 1; i <= 20; i++) {
+            const optMin = new Option(i, i), optMax = new Option(i, i);
+            if (i === 8) optMin.selected = true;
+            if (i === 14) optMax.selected = true;
+            minZSelect.add(optMin); maxZSelect.add(optMax);
+        }
+
+        /* Initialize the Leaflet map and keep layout-sensitive UI synchronized with map changes. */
+        const map = L.map('map', {zoomControl: true, doubleClickZoom: false, scrollWheelZoom: true, tap: true}).setView([42.6977, 23.3219], 12);
+        map.on('zoomend moveend resize', updateSyncDockBottomAlignment);
+        
+        /* Persist current map position whenever the user moves or zooms. */
+        map.on('moveend zoomend', saveSettings);
+
+        /* In compact mode, map interaction hides the menu to maximize usable map space. */
+        map.on('mousedown touchstart', () => {
+            if (isResponsiveMenuMode()) {
+                document.getElementById('controls').classList.add('hidden');
+                updateMenuTogglePosition();
+            }
+        });
+
+        /* Provider and overlay layers used by the different export modes. */
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 });
+        const esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true });
+        const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true });
+        const esriLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true, pane: 'shadowPane' });
+        
+        const googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20 });
+        const googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20 });
+        const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20 });
+        
+        /* Start in a safe default mode that does not depend on premium imagery providers. */
+        let currentLayer = osmLayer; currentLayer.addTo(map);
+
+        /* Refresh provider-dependent map type options and warning text in the sidebar. */
+        function syncMapOptions() {
+            const provider = document.getElementById('provider').value, 
+                  target = document.getElementById('targetWidget').value,
+                  typeSelect = document.getElementById('mapTypeChoice'), 
+                  gWarning = document.getElementById('googleWarning'),
+                  yWarning = document.getElementById('yaapuWarning');
+            
+            let options = '<option value="Satellite">Satellite</option><option value="Street" selected>Street</option>';
+            if (provider !== "OSM") options += '<option value="Hybrid">Hybrid (Sat + Labels)</option>';
+            
+            typeSelect.innerHTML = provider === "OSM" ? '<option value="Street" selected>Street</option>' : options;
+            gWarning.style.display = (provider === "GOOGLE") ? "block" : "none";
+
+            if (target === 'yaapu' && provider !== "GOOGLE") {
+                yWarning.innerText = `Attention: Yaapu only supports specific folders. Provider ${provider} will be mapped to "Google" folder names.`;
+                yWarning.style.display = "block";
+            } else {
+                yWarning.style.display = "none";
+            }
+        }
+
+        /* SD card linking uses the File System Access API when the browser supports it. */
+        let sdHandle = null;
+        async function linkSDCard() { try { sdHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); const btn = document.getElementById('linkSDBtn'); btn.innerText = "✅ SD Card Linked"; btn.classList.add('linked'); } catch (err) {} }
+
+        /* Reset the SD card UI if permission is lost or the directory becomes inaccessible. */
+        function resetSDButton() { sdHandle = null; const btn = document.getElementById('linkSDBtn'); btn.innerText = "📂 Link SD Card"; btn.classList.remove('linked'); }
+
+        /* Poll the directory handle so stale permissions are detected quickly. */
+        setInterval(async () => {
+            if (!sdHandle) return;
+            try { await sdHandle.values().next(); } catch (err) { resetSDButton(); }
+        }, 1500);
+
+        /* Toggle all interactive zoom mechanisms together from one checkbox. */
+        function toggleZoomLock() { const isLocked = document.getElementById('zoomLockToggle').checked; const toggle = isLocked ? 'disable' : 'enable'; ['scrollWheelZoom', 'doubleClickZoom', 'touchZoom', 'boxZoom', 'keyboard'].forEach(m => map[m][toggle]()); if (map.zoomControl) map.zoomControl[toggle](); }
+
+        /* Middle-mouse drag emulates a pan tool on desktop. */
+        const mapContainer = document.getElementById('map');
+        let isMiddleDragging = false, lastMousePos = { x: 0, y: 0 };
+        mapContainer.addEventListener('mousedown', e => { if (e.button === 1) { isMiddleDragging = true; lastMousePos = { x: e.clientX, y: e.clientY }; mapContainer.style.cursor = 'grabbing'; e.preventDefault(); } });
+        window.addEventListener('mousemove', e => { if (isMiddleDragging) { map.panBy([lastMousePos.x - e.clientX, lastMousePos.y - e.clientY], { animate: false }); lastMousePos = { x: e.clientX, y: e.clientY }; } });
+        window.addEventListener('mouseup', e => { if (e.button === 1 && isMiddleDragging) { isMiddleDragging = false; mapContainer.style.cursor = ''; } });
+
+        /* Right-click is repurposed to cancel measure/draw actions or clear the active area box. */
+        mapContainer.addEventListener('contextmenu', e => {
+            e.preventDefault(); if (isMeasuring) { toggleMeasure(); return; } 
+            if (drawnItems.getLayers().length > 0) { drawnItems.clearLayers(); if (labels.width) { map.removeLayer(labels.width); map.removeLayer(labels.height); labels = {width:null,height:null}; } document.getElementById('status').innerText = "Area removed."; drawControl._toolbars.draw._modes.rectangle.handler.enable(); return; } 
+            const handler = drawControl._toolbars.draw._modes.rectangle.handler; if (handler.enabled()) handler.disable();
+        });
+
+        /* Swap base layers and theme colors to match the active provider/map-type combination. */
+        function switchMapLayer() {
+            const provider = document.getElementById('provider').value, type = document.getElementById('mapTypeChoice').value;
+            if (currentLayer) map.removeLayer(currentLayer);
+            if (map.hasLayer(esriLabels)) map.removeLayer(esriLabels);
+
+            if (type === 'Satellite') { 
+                currentLayer = (provider === 'ESRI' ? esriSatellite : (provider === 'GOOGLE' ? googleSatellite : osmLayer)); 
+                mapContainer.classList.add('dark-contrast-theme'); 
+            }
+            else if (type === 'Hybrid') {
+                if (provider === 'ESRI') {
+                    currentLayer = esriSatellite;
+                    esriLabels.addTo(map);
+                } else {
+                    currentLayer = googleHybrid;
+                }
+                mapContainer.classList.add('dark-contrast-theme'); 
+            }
+            else { 
+                if (provider === 'OSM') currentLayer = osmLayer; 
+                else if (provider === 'ESRI') currentLayer = esriStreet; 
+                else currentLayer = googleStreet; 
+                mapContainer.classList.remove('dark-contrast-theme'); 
+            }
+            currentLayer.addTo(map);
+        }
+
+        /* Register core Leaflet controls: search, scale, rectangle drawing, units, and location. */
+        const geocoder = L.Control.geocoder({ defaultMarkGeocode: false, position: 'topleft', placeholder: "SEARCH" }).on('markgeocode', e => map.fitBounds(e.geocode.bbox)).addTo(map);
+        L.control.scale({ imperial: false, metric: true, position: 'bottomleft' }).addTo(map);
+        const drawnItems = new L.FeatureGroup(); map.addLayer(drawnItems);
+        const drawControl = new L.Control.Draw({ draw: { rectangle: { shapeOptions: { color: '#ff0000', weight: 2, fillOpacity: 0.1 } }, polyline: false, polygon: false, circle: false, marker: false, circlemarker: false }, edit: { featureGroup: drawnItems, remove: false } });
+        map.addControl(drawControl);
+        
+        const AreaUnitControl = L.Control.extend({ 
+            options: { position: 'topleft' }, 
+            onAdd: function(map) { 
+                const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control area-unit-control'); 
+                div.innerHTML = `
+                    <select id="areaUnitSelect" onchange="changeAreaUnit()">
+                        <option value="km2" selected>km²</option>
+                        <option value="mi2">mi²</option>
+                        <option value="ha">ha</option>
+                        <option value="acre">acre</option>
+                    </select>`; 
+                L.DomEvent.disableClickPropagation(div); 
+                return div; 
+            } 
+        });
+        map.addControl(new AreaUnitControl());
+
+        const LocationControl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function(map) {
+                const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control location-control');
+                div.innerHTML = `
+                    <button id="locate-btn-control" class="locate-control-btn" title="Find my location" aria-label="Find my location" onclick="findCurrentLocation()">
+                        <svg class="locate-pin-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path class="pin-body" d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"></path>
+                            <circle class="pin-head" cx="12" cy="10" r="3.7"></circle>
+                            <circle class="pin-core" cx="12" cy="10" r="1.35"></circle>
+                        </svg>
+                    </button>`;
+                L.DomEvent.disableClickPropagation(div);
+                return div;
+            }
+        });
+        map.addControl(new LocationControl());
+
+        /* Tile math and area formatting helpers support export estimates and folder generation. */
+        let labels = { width: null, height: null };
+        function lon2tile(lon, zoom) { return Math.floor((lon + 180) / 360 * Math.pow(2, zoom)); }
+        function lat2tile(lat, zoom) { return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)); }
+        function calculateTiles(bounds, minZ, maxZ) { let total = 0; for (let z = minZ; z <= maxZ; z++) { total += (Math.abs(lon2tile(bounds.getWest(), z) - lon2tile(bounds.getEast(), z)) + 1) * (Math.abs(lat2tile(bounds.getSouth(), z) - lat2tile(bounds.getNorth(), z)) + 1); } return total; }
+
+        let currentAreaUnit = 'km2'; 
+
+        /* Convert raw square meters into the currently selected display unit. */
+        function formatArea(sqMeters) { 
+            if (sqMeters === 0) return "0.00 " + currentAreaUnit; 
+            switch(currentAreaUnit) {
+                case 'km2': return (sqMeters / 1000000).toFixed(3) + ' km²';
+                case 'mi2': return (sqMeters / 2589988.11).toFixed(3) + ' mi²';
+                case 'ha': return (sqMeters / 10000).toFixed(2) + ' ha';
+                case 'acre': return (sqMeters / 4046.86).toFixed(2) + ' acre';
+                default: return sqMeters.toFixed(0) + ' m²';
+            }
+        }
+        window.changeAreaUnit = function() { currentAreaUnit = document.getElementById('areaUnitSelect').value; triggerUpdate(); };
+
+        /* Update side labels, area readout, and tile estimate for the current selection box. */
+        function updateSideLabels(layer) {
+            const latlngs = layer.getLatLngs()[0], bounds = layer.getBounds(), minZ = parseInt(document.getElementById('minZoom').value), maxZ = parseInt(document.getElementById('maxZoom').value), area = L.GeometryUtil.geodesicArea(latlngs), tiles = calculateTiles(bounds, minZ, maxZ);
+            const wM = latlngs[0].distanceTo(latlngs[1]), hM = latlngs[1].distanceTo(latlngs[2]), wS = wM >= 1000 ? (wM/1000).toFixed(2)+'km' : Math.round(wM)+'m', hS = hM >= 1000 ? (hM/1000).toFixed(2)+'km' : Math.round(hM)+'m';
+            const midT = L.latLng((latlngs[0].lat + latlngs[1].lat)/2, (latlngs[0].lng + latlngs[1].lng)/2), midL = L.latLng((latlngs[1].lat + latlngs[2].lat)/2, (latlngs[1].lng + latlngs[2].lng)/2);
+            if (!labels.width) { labels.width = L.marker(midT, { icon: L.divIcon({ className: 'side-label', html: wS }) }).addTo(map); labels.height = L.marker(midL, { icon: L.divIcon({ className: 'side-label', html: hS }) }).addTo(map); }
+            else { labels.width.setLatLng(midT).setIcon(L.divIcon({ className: 'side-label', html: wS })); labels.height.setLatLng(midL).setIcon(L.divIcon({ className: 'side-label', html: hS })); }
+            document.getElementById('status').innerHTML = `Area: ${formatArea(area)}<br><span style="color:#87b025">Total Sync Tiles (100x100 PNG): ${tiles.toLocaleString()}</span>`;
+        }
+
+        /* Refresh derived map UI whenever the area or zoom range changes. */
+        function triggerUpdate() { if(drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]); document.getElementById('zoom-display-map').innerText = `Zoom: ${map.getZoom()}`; }
+        map.on(L.Draw.Event.CREATED, e => { drawnItems.clearLayers(); drawnItems.addLayer(e.layer); updateSideLabels(e.layer); });
+        map.on('draw:editmove draw:editresize editdrag zoomend moveend', triggerUpdate);
+        
+        /* Update the Leaflet Draw tooltip to use the user's selected metric system while drawing. */
+        map.on('draw:drawstop draw:editstop editmove editresize', () => {
+            const tooltips = document.querySelectorAll('.leaflet-tooltip-pane .leaflet-tooltip');
+            tooltips.forEach(tooltip => {
+                const text = tooltip.innerText || tooltip.textContent;
+                const match = text.match(/Area:\s*([\d.]+)\s*(m²|ha|km²)/i);
+                if (match) {
+                    const value = parseFloat(match[1]);
+                    const unit = match[2].toLowerCase();
+                    let sqMeters;
+                    if (unit === 'ha') sqMeters = value * 10000;
+                    else if (unit === 'm²') sqMeters = value;
+                    else if (unit === 'km²') sqMeters = value * 1000000;
+                    tooltip.innerText = `Area: ${formatArea(sqMeters)}`;
+                }
+            });
+        });
+
+        /* Measurement and geolocation tools live outside the export pipeline but share the same map UI. */
+        let isMeasuring = false, measureStart = null, measureLine = null;
+        const locationMarkerIcon = L.divIcon({
+            className: 'location-marker',
+            html: `<svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M12.5 0.8C6.1 0.8 0.9 6 0.9 12.4c0 8.8 11.6 27.1 11.6 27.1s11.6-18.3 11.6-27.1C24.1 6 18.9 0.8 12.5 0.8z" fill="#87b025" stroke="#ffffff" stroke-width="1.2"/>
+                    <circle cx="12.5" cy="12.4" r="4.4" fill="#1e1e1e" stroke="#ffffff" stroke-width="0.8"/>
+                </svg>`,
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34]
+        });
+        let locationMarker = null;
+
+        /* Query the browser permission state when supported so location errors are more actionable. */
+        async function getGeolocationPermissionState() {
+            if (!navigator.permissions || !navigator.permissions.query) return 'unknown';
+            try {
+                const result = await navigator.permissions.query({ name: 'geolocation' });
+                return result.state || 'unknown';
+            } catch {
+                return 'unknown';
+            }
+        }
+
+        /* Center the map on the browser's current location and keep a reusable marker there. */
+        async function findCurrentLocation() {
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by this browser.');
+                return;
+            }
+
+            if (!window.isSecureContext) {
+                alert('Location requires a secure context (HTTPS or localhost). Open this page via HTTPS to use geolocation.');
+                return;
+            }
+
+            const permissionState = await getGeolocationPermissionState();
+            if (permissionState === 'denied') {
+                alert('Location access is blocked for this site. Please allow Location permission for this site and Edge app settings, then try again.');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const latLng = [lat, lng];
+
+                    map.setView(latLng, map.getZoom(), { animate: true });
+
+                    if (locationMarker) {
+                        locationMarker.setIcon(locationMarkerIcon);
+                        locationMarker.setLatLng(latLng);
+                    } else {
+                        locationMarker = L.marker(latLng, { icon: locationMarkerIcon }).addTo(map);
+                    }
+
+                    locationMarker.bindPopup(`My location<br>Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`).openPopup();
+
+                    map.setView(latLng, map.getZoom(), { animate: true });
+                },
+                error => {
+                    let msg = 'Unable to get your location.';
+                    if (error.code === error.PERMISSION_DENIED) {
+                        const ua = navigator.userAgent || '';
+                        const isMobileEdge = /EdgA/i.test(ua);
+                        const browserHint = isMobileEdge
+                            ? 'Edge mobile may block prompts if site/app permission was denied before. In Edge: Site permissions > Location = Allow, and in Android app permissions: Edge > Location = Allow.'
+                            : 'Check site Location permission and device app/location settings.';
+                        msg = `Location permission denied. ${browserHint}`;
+                    }
+                    else if (error.code === error.POSITION_UNAVAILABLE) msg = 'Location unavailable.';
+                    else if (error.code === error.TIMEOUT) msg = 'Location request timed out.';
+                    alert(msg);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+
+        /* Toggle live center-to-center distance measurement. */
+        function toggleMeasure() { 
+            isMeasuring = !isMeasuring; 
+            const btn = document.getElementById('measure-btn-map'), pop = document.getElementById('hud-measure-popup'), addon = document.getElementById('measure-output'); 
+            if (isMeasuring) { btn.classList.add('active'); measureStart = map.getCenter(); pop.style.display = 'block'; addon.style.display = 'inline-block'; pop.innerText = "0m / 0ft"; addon.innerText = "0m / 0ft"; } 
+            else { btn.classList.remove('active'); measureStart = null; pop.style.display = 'none'; addon.style.display = 'none'; if (measureLine) { map.removeLayer(measureLine); measureLine = null; } } 
+        }
+        map.on('mousemove', e => { document.getElementById('coords-output').innerText = `Lat: ${e.latlng.lat.toFixed(4)}, Lng: ${e.latlng.lng.toFixed(4)}`; });
+        map.on('move', () => { if (isMeasuring && measureStart) { const currentCenter = map.getCenter(); const distM = measureStart.distanceTo(currentCenter); const combined = `${Math.round(distM)}m / ${Math.round(distM*3.28)}ft`; document.getElementById('hud-measure-popup').innerText = combined; document.getElementById('measure-output').innerText = combined; if (measureLine) map.removeLayer(measureLine); measureLine = L.polyline([measureStart, currentCenter], {color: mapContainer.classList.contains('dark-contrast-theme') ? '#fff' : '#87b025', weight: 3, dashArray: '5, 5'}).addTo(map); } });
+
+        /* Export pipeline state and throttling configuration. */
+        let zipCache = {}, syncAborted = false;
+        const TILE_CONCURRENCY = 4;
+        const MAX_TILE_RETRIES = 2;
+        const MAX_FILE_WRITE_RETRIES = 2;
+        const MIN_TILE_BLOB_BYTES = 128;
+        const PROGRESS_UPDATE_INTERVAL_MS = 120;
+
+        /* Small async delay helper used for retry backoff. */
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        /* Resolve the live tile URL for the selected provider/map-type pair. */
+        function getTileUrl(provider, mapType, z, x, y) {
+            if (provider === 'ESRI') {
+                return mapType === 'Street'
+                    ? `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`
+                    : `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+            }
+            if (provider === 'OSM') {
+                return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+            }
+            if (mapType === 'Satellite') return `https://mt1.google.com/vt/lyrs=s&x=${x}&y=${y}&z=${z}`;
+            if (mapType === 'Hybrid') return `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
+            return `https://mt1.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}`;
+        }
+
+        /* Build the output folder structure for the selected target widget format. */
+        function getTilePath(target, isZipMode, provider, mapType, z, x, y) {
+            const displayZoom = z.toString();
+            if (target === 'b14ckyy') {
+                const base = isZipMode ? ["ethosmaps", "maps"] : ["bitmaps", "ethosmaps", "maps"];
+                if (provider === 'ESRI') {
+                    return [...base, provider, mapType, displayZoom, `${y}`, `${x}.png`];
+                }
+                return [...base, provider, mapType, displayZoom, `${x}`, `${y}.png`];
+            }
+            const yaapuMapName = (mapType === 'Satellite') ? 'GoogleSatelliteMap' : (mapType === 'Hybrid' ? 'GoogleHybridMap' : 'GoogleMap');
+            const base = isZipMode ? ["yaapu", "maps"] : ["bitmaps", "yaapu", "maps"];
+            return [...base, yaapuMapName, displayZoom, `${y}`, `s_${x}.png`];
+        }
+
+        /* Each worker uses its own canvas to avoid shared-state issues during parallel processing. */
+        function createWorkerCanvas() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            return { canvas, ctx: canvas.getContext('2d') };
+        }
+
+        /* Convert a resized tile canvas into a PNG blob for storage or ZIP export. */
+        function canvasToBlob(canvas) {
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(blob => {
+                    if (!blob) return reject(new Error('Canvas conversion failed'));
+                    resolve(blob);
+                }, 'image/png');
+            });
+        }
+
+        /* Quick integrity guard to reject obviously broken image blobs before saving. */
+        function isLikelyValidTileBlob(blob) {
+            if (!blob) return false;
+            if (blob.size < MIN_TILE_BLOB_BYTES) return false;
+            if (blob.type && !blob.type.startsWith('image/')) return false;
+            return true;
+        }
+
+        /* Write tile blob to SD and verify resulting file size, retrying on mismatch. */
+        async function writeBlobWithVerification(currentDir, fileName, blob) {
+            let lastError = null;
+            for (let attempt = 0; attempt <= MAX_FILE_WRITE_RETRIES; attempt++) {
+                try {
+                    const fileH = await currentDir.getFileHandle(fileName, { create: true });
+                    const writable = await fileH.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+
+                    const savedFile = await fileH.getFile();
+                    if (savedFile && savedFile.size === blob.size && savedFile.size > 0) {
+                        return;
+                    }
+                    throw new Error(`File size verification failed (${savedFile ? savedFile.size : 0} != ${blob.size})`);
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < MAX_FILE_WRITE_RETRIES) {
+                        await sleep(120 * (attempt + 1));
+                    }
+                }
+            }
+            throw lastError || new Error('Verified file write failed');
+        }
+
+        /* Download and resize a single tile, adding label overlay imagery where required. */
+        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx) {
+            const img = await loadImage(getTileUrl(provider, mapType, z, x, y));
+            ctx.clearRect(0, 0, 100, 100);
+            ctx.drawImage(img, 0, 0, 256, 256, 0, 0, 100, 100);
+            if (provider === 'ESRI' && mapType === 'Hybrid') {
+                const labelUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/${z}/${y}/${x}`;
+                try {
+                    const labelImg = await loadImage(labelUrl);
+                    ctx.drawImage(labelImg, 0, 0, 256, 256, 0, 0, 100, 100);
+                } catch (e) {}
+            }
+            const blob = await canvasToBlob(canvas);
+            if (!isLikelyValidTileBlob(blob)) {
+                throw new Error('Generated tile blob failed integrity check');
+            }
+            return blob;
+        }
+
+        /* Retry transient tile download failures before declaring a tile lost. */
+        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx) {
+            let lastError = null;
+            for (let attempt = 0; attempt <= MAX_TILE_RETRIES; attempt++) {
+                try {
+                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx);
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < MAX_TILE_RETRIES) {
+                        await sleep(200 * (attempt + 1));
+                    }
+                }
+            }
+            throw lastError || new Error('Tile fetch failed');
+        }
+
+        /* Update progress bar text with throughput-derived remaining time and failure count. */
+        function updateSyncProgress(processed, total, startTime, failedCount) {
+            const progress = total > 0 ? (processed / total * 100) : 100;
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            if (processed <= 0) {
+                document.getElementById('downloadStatus').innerText = `Syncing: 0 / ${total}`;
+                return;
+            }
+            const elapsed = Date.now() - startTime;
+            const avgPerTile = elapsed / processed;
+            const remainingMs = Math.max(0, (total - processed) * avgPerTile);
+            const mins = Math.floor(remainingMs / 60000);
+            const secs = Math.ceil((remainingMs % 60000) / 1000);
+            const failSuffix = failedCount > 0 ? ` | Failed: ${failedCount}` : '';
+            document.getElementById('downloadStatus').innerText = `Syncing: ${processed} / ${total}${failSuffix} (${mins}:${secs.toString().padStart(2, '0')} remaining)`;
+        }
+
+        /* Allow the running export job to stop cleanly between tile operations. */
+        function abortSync() { syncAborted = true; closeSync(); }
+
+        /* Show the export confirmation dialog with a summary of the current selection. */
+        function startSync() {
+            const layer = drawnItems.getLayers()[0]; if (!layer) { alert("Select area first."); return; }
+            syncAborted = false;
+            document.getElementById('modalHeader').innerText = "Syncing to SD Card";
+            document.getElementById('overwriteSection').style.display = 'flex';
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('modalActions').style.display = 'flex';
+            document.getElementById('mainConfirmBtn').innerText = "Confirm Sync";
+            document.getElementById('mainConfirmBtn').onclick = handleConfirmClick;
+            const target = document.getElementById('targetWidget').value, provider = document.getElementById('provider').value, mapType = document.getElementById('mapTypeChoice').value, projectName = document.getElementById('projectName').value, bounds = layer.getBounds(), minZ = document.getElementById('minZoom').value, maxZ = document.getElementById('maxZoom').value;
+            const areaValue = formatArea(L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]));
+            
+            let displayMapType = mapType;
+            if (target === 'yaapu') {
+                if (mapType === 'Satellite') displayMapType = 'GoogleSatelliteMap';
+                else if (mapType === 'Hybrid') displayMapType = 'GoogleHybridMap';
+                else displayMapType = 'GoogleMap';
+            }
+
+            let targetPath;
+            if (target === 'b14ckyy') {
+                if (provider === 'ESRI') {
+                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].png`;
+                } else {
+                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
+                }
+            } else {
+                targetPath = `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
+            }
+
+            document.getElementById('syncInfo').innerHTML = `
+                <div class="sync-info-row"><span>Target Widget:</span><span>${target === 'b14ckyy' ? 'b14ckyy' : 'Yaapu'}</span></div>
+                <div class="sync-info-row"><span>Total Tiles:</span><span>${calculateTiles(bounds, parseInt(minZ), parseInt(maxZ)).toLocaleString()}</span></div>
+                <div class="sync-info-row"><span>Project Name:</span><span>${projectName}</span></div>
+                <div class="sync-info-row"><span>Zoom Range:</span><span>${minZ} - ${maxZ}</span></div>
+                <div class="sync-info-row"><span>Area:</span><span>${areaValue}</span></div>
+                <div class="sync-info-row"><span>Example Path:</span><span style="font-size:10px;">${targetPath}</span></div>
+            `;
+            document.getElementById('syncOverlay').style.display = 'flex';
+        }
+
+        /* Hide the sync modal without changing any other map state. */
+        function closeSync() { document.getElementById('syncOverlay').style.display = 'none'; }
+
+        /* Route the confirmation button to SD-card mode or ZIP fallback mode. */
+        function handleConfirmClick() {
+            if (!sdHandle) {
+                document.getElementById('modalHeader').innerText = "No SD Card Linked";
+                document.getElementById('syncInfo').innerHTML = `<p style='text-align:center; padding:10px; font-size:14px; color:#ffeb3b;'>Continue by downloading a ZIP file to your browser's downloads folder</p>`;
+                document.getElementById('overwriteSection').style.display = 'none';
+                document.getElementById('mainConfirmBtn').innerText = "Confirm ZIP Download";
+                document.getElementById('mainConfirmBtn').onclick = confirmSync;
+                return;
+            }
+            confirmSync();
+        }
+
+        /*
+         * Execute the full export pipeline:
+         * gather tiles, fetch/resize in parallel, write to SD card or ZIP, and keep UI progress updated.
+         */
+        async function confirmSync() {
+            syncAborted = false;
+            if (sdHandle) {
+                try {
+                    const permission = await sdHandle.queryPermission({mode: 'readwrite'});
+                    if (permission !== 'granted') throw new Error("Permission lost");
+                } catch (e) {
+                    resetSDButton(); alert("SD Card connection lost. Please link it again."); closeSync(); return;
+                }
+            }
+            const isZipMode = !sdHandle, target = document.getElementById('targetWidget').value;
+            document.getElementById('modalHeader').innerText = isZipMode ? "Downloading ZIP" : "Syncing Project";
+            document.getElementById('syncInfo').innerHTML = "";
+            document.getElementById('modalActions').style.display = 'none';
+            document.getElementById('overwriteSection').style.display = 'none';
+            document.getElementById('progressSection').style.display = 'block';
+            
+            const provider = document.getElementById('provider').value, mapType = document.getElementById('mapTypeChoice').value, layer = drawnItems.getLayers()[0], bounds = layer.getBounds(), minZ = parseInt(document.getElementById('minZoom').value), maxZ = parseInt(document.getElementById('maxZoom').value);
+            const forceOverwrite = document.getElementById('overwriteToggle').checked, zip = isZipMode ? new JSZip() : null;
+            const tiles = [];
+            for (let z = minZ; z <= maxZ; z++) {
+                const xMin = lon2tile(bounds.getWest(), z), xMax = lon2tile(bounds.getEast(), z), yMin = lat2tile(bounds.getNorth(), z), yMax = lat2tile(bounds.getSouth(), z);
+                for (let x = xMin; x <= xMax; x++) {
+                    for (let y = yMin; y <= yMax; y++) {
+                        tiles.push({ z, x, y });
+                    }
+                }
+            }
+
+            let total = tiles.length, processed = 0, failedCount = 0;
+            const startTime = Date.now();
+            let lastProgressUpdate = 0;
+
+            const pushProgress = (force = false) => {
+                const now = Date.now();
+                if (force || (now - lastProgressUpdate) >= PROGRESS_UPDATE_INTERVAL_MS) {
+                    updateSyncProgress(processed, total, startTime, failedCount);
+                    lastProgressUpdate = now;
+                }
+            };
+
+            pushProgress(true);
+
+            let nextTileIndex = 0;
+            const workerCount = Math.max(1, Math.min(TILE_CONCURRENCY, tiles.length));
+
+            const workers = Array.from({ length: workerCount }, async () => {
+                const { canvas, ctx } = createWorkerCanvas();
+                while (!syncAborted) {
+                    const currentIndex = nextTileIndex++;
+                    if (currentIndex >= tiles.length) break;
+
+                    const { z, x, y } = tiles[currentIndex];
+                    const tileId = `${provider}/${mapType}/${z}/${x}/${y}`;
+                    try {
+                        if (!zipCache[tileId] || forceOverwrite) {
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx);
+                        }
+
+                        const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y);
+                        if (sdHandle) {
+                            let currentDir = sdHandle;
+                            for (let i = 0; i < pathArr.length - 1; i++) {
+                                currentDir = await currentDir.getDirectoryHandle(pathArr[i], { create: true });
+                            }
+                            await writeBlobWithVerification(currentDir, pathArr[pathArr.length - 1], zipCache[tileId]);
+                        } else {
+                            let folderPath = zip;
+                            for (let i = 0; i < pathArr.length - 1; i++) {
+                                folderPath = folderPath.folder(pathArr[i]);
+                            }
+                            folderPath.file(pathArr[pathArr.length - 1], zipCache[tileId]);
+                        }
+                    } catch (e) {
+                        failedCount++;
+                    } finally {
+                        processed++;
+                        pushProgress();
+                    }
+                }
+            });
+
+            await Promise.all(workers);
+            if (syncAborted) return;
+
+            pushProgress(true);
+            if (zip && !syncAborted) saveAs(await zip.generateAsync({type: "blob"}), `EthosMaps_${target}.zip`);
+            if (!syncAborted) {
+                if (failedCount > 0) {
+                    document.getElementById('downloadStatus').innerText = `Completed with ${failedCount} failed tile(s).`;
+                    await sleep(700);
+                    alert(`Sync finished with ${failedCount} failed tile(s). Please retry with Force Overwrite.`);
+                }
+                closeSync();
+            }
+        }
+
+        /* Load an image with timeout protection so stuck requests do not block the export queue. */
+        function loadImage(url, timeoutMs = 12000) {
+            return new Promise((res, rej) => {
+                const img = new Image();
+                let finished = false;
+                const timer = setTimeout(() => {
+                    if (finished) return;
+                    finished = true;
+                    rej(new Error(`Image load timeout: ${url}`));
+                }, timeoutMs);
+
+                img.crossOrigin = "Anonymous";
+                img.onload = () => {
+                    if (finished) return;
+                    finished = true;
+                    clearTimeout(timer);
+                    res(img);
+                };
+                img.onerror = () => {
+                    if (finished) return;
+                    finished = true;
+                    clearTimeout(timer);
+                    rej(new Error(`Image load failed: ${url}`));
+                };
+                img.src = url;
+            });
+        }
+
+        /*
+         * Final bootstrap sequence:
+         * populate dependent controls, apply responsive layout, restore saved state,
+         * and hook the geocoder collapse event for cleaner repeated searches.
+         */
+        window.addEventListener('load', () => {
+            syncMapOptions();
+            checkResponsiveMenu();
+            updateViewportBottomOffset();
+            loadSettings();
+
+            const geocoderInput = document.querySelector('.leaflet-control-geocoder-form input');
+            if (geocoderInput) {
+                geocoder.on('collapse', () => {
+                    geocoderInput.value = '';
+                });
+            }
+        });
+    </script>
+</body>
+</html>
