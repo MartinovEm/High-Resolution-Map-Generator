@@ -93,7 +93,16 @@ This is a web-based tool for generating and exporting 100x100 PNG map tiles from
 	 - If you downloaded a ZIP, extract it and copy the extracted folder `ethosmaps` or `yaapu` to your radio’s SD card -> `bitmaps/`
 
 12. **Other Features**
-	 - Measurement tool, full screen mode, remember settings, restore settings, lock zoom.
+	 - Measurement tool, full screen mode, remember settings, restore settings, lock zoom, Android mobile devices compatibility.
+
+---
+
+**Example of High-Res Map Generator loaded on mobile phone (screen 6.5")**
+
+![Screenshot_2026-03-21-02-50-35-21_40deb401b9ffe8e1df2f1cc5ba480b12](https://github.com/user-attachments/assets/e57b34e9-6c41-43f3-bbb1-75b6f81024d0)
+
+![Screenshot_2026-03-21-02-52-05-46_40deb401b9ffe8e1df2f1cc5ba480b12](https://github.com/user-attachments/assets/6d21b6a1-a9d8-47f3-b90b-34760d20a759)
+
 
 ---
 
