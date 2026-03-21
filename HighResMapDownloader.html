@@ -726,8 +726,8 @@
         function formatArea(sqMeters) { 
             if (sqMeters === 0) return "0.00 " + currentAreaUnit; 
             switch(currentAreaUnit) {
-                case 'km2': return (sqMeters / 1000000).toFixed(3) + ' km²';
-                case 'mi2': return (sqMeters / 2589988.11).toFixed(3) + ' mi²';
+                case 'km2': return (sqMeters / 1000000).toFixed(2) + ' km²';
+                case 'mi2': return (sqMeters / 2589988.11).toFixed(2) + ' mi²';
                 case 'ha': return (sqMeters / 10000).toFixed(2) + ' ha';
                 case 'acre': return (sqMeters / 4046.86).toFixed(2) + ' acre';
                 default: return sqMeters.toFixed(0) + ' m²';
@@ -1054,6 +1054,22 @@
 
         /* Show the export confirmation dialog with a summary of the current selection. */
         function startSync() {
+                        // Always reset modal buttons to Cancel/Confirm Sync
+                        const modalActions = document.getElementById('modalActions');
+                        const cancelBtn = modalActions.querySelector('.btn-cancel, .btn-confirm');
+                        if (cancelBtn) {
+                            cancelBtn.innerText = 'Cancel';
+                            cancelBtn.className = 'btn-cancel';
+                            cancelBtn.onclick = closeSync;
+                            cancelBtn.style.display = 'block';
+                        }
+                        const mainConfirmBtn = document.getElementById('mainConfirmBtn');
+                        if (mainConfirmBtn) {
+                            mainConfirmBtn.innerText = 'Confirm Sync';
+                            mainConfirmBtn.className = 'btn-confirm';
+                            mainConfirmBtn.onclick = handleConfirmClick;
+                            mainConfirmBtn.style.display = 'block';
+                        }
             const layer = drawnItems.getLayers()[0];
             const status = document.getElementById('status');
             const projectNameInput = document.getElementById('projectName');
@@ -1253,8 +1269,66 @@
                     document.getElementById('downloadStatus').innerText = `Completed with ${failedCount} failed tile(s).`;
                     await sleep(700);
                     alert(`Sync finished with ${failedCount} failed tile(s). Please retry with Force Overwrite.`);
+                    closeSync();
+                } else {
+                    // Show confirmation modal with same layout as pre-sync
+                    // Gather info for summary
+                    const target = document.getElementById('targetWidget').value;
+                    const provider = document.getElementById('provider').value;
+                    const mapType = document.getElementById('mapTypeChoice').value;
+                    const projectName = document.getElementById('projectName').value;
+                    let displayMapType = mapType;
+                    if (target === 'yaapu') {
+                        if (mapType === 'Satellite') displayMapType = 'GoogleSatelliteMap';
+                        else if (mapType === 'Hybrid') displayMapType = 'GoogleHybridMap';
+                        else displayMapType = 'GoogleMap';
+                    }
+                    let targetPath;
+                    if (target === 'b14ckyy') {
+                        if (provider === 'ESRI') {
+                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].png`;
+                        } else {
+                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
+                        }
+                    } else {
+                        targetPath = `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
+                    }
+                    // Try to get area and zooms from last sync
+                    let areaValue = '';
+                    let minZ = '', maxZ = '', totalTiles = '';
+                    try {
+                        const layer = drawnItems.getLayers()[0];
+                        if (layer) {
+                            areaValue = formatArea(L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]));
+                            minZ = document.getElementById('minZoom').value;
+                            maxZ = document.getElementById('maxZoom').value;
+                            totalTiles = calculateTiles(layer.getBounds(), parseInt(minZ), parseInt(maxZ)).toLocaleString();
+                        }
+                    } catch (e) {}
+                    document.getElementById('modalHeader').innerText = 'Sync Complete!';
+                    document.getElementById('syncInfo').innerHTML = `
+                        <div class="sync-info-row"><span>Target Widget:</span><span>${target === 'b14ckyy' ? 'b14ckyy' : 'Yaapu'}</span></div>
+                        <div class="sync-info-row"><span>Total Tiles:</span><span>${totalTiles}</span></div>
+                        <div class="sync-info-row"><span>Project Name:</span><span>${projectName}</span></div>
+                        <div class="sync-info-row"><span>Zoom Range:</span><span>${minZ} - ${maxZ}</span></div>
+                        <div class="sync-info-row"><span>Area:</span><span>${areaValue}</span></div>
+                        <div class="sync-info-row"><span>Example Path:</span><span style="font-size:10px;">${targetPath}</span></div>
+                        <div style='margin:18px 0 0 0; text-align:center; color:#87b025; font-size:16px; font-weight:bold;'>Sync complete! All tiles exported successfully.</div>
+                    `;
+                    document.getElementById('progressSection').style.display = 'none';
+                    document.getElementById('overwriteSection').style.display = 'none';
+                    document.getElementById('modalActions').style.display = 'flex';
+                    document.getElementById('mainConfirmBtn').style.display = 'none';
+                    // Reuse the Cancel button as Close
+                    const modalActions = document.getElementById('modalActions');
+                    const cancelBtn = modalActions.querySelector('.btn-cancel');
+                    if (cancelBtn) {
+                        cancelBtn.innerText = 'Close';
+                        cancelBtn.className = 'btn-confirm';
+                        cancelBtn.onclick = closeSync;
+                        cancelBtn.style.display = 'block';
+                    }
                 }
-                closeSync();
             }
         }
 
