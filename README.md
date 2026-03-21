@@ -1,4 +1,4 @@
-## High-Resolution Map Tile Generator
+## High-Resolution Map Generator
 
 This is a web-based tool for generating and exporting 100x100 PNG map tiles from high-resolution map providers, designed for RC pilots and hobbyists using Ethos or Yaapu mapping widgets on their radios. It enables quick, straightforward operation by selection of a flying area and direct download of compatible map tiles to your radio’s SD card or as a ZIP file for later transfer.
 
