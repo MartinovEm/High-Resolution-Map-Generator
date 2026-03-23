@@ -37,9 +37,11 @@ This is a web-based tool for generating and exporting 100x100 PNG map tiles from
 - **Output Targets:**
 	- **[b14ckyy ETHOS Mapping Widget](https://github.com/b14ckyy/ETHOSMappingWidget-Revisited):**
 	 - Output path: `/bitmaps/ethosmaps/maps/{Provider}/{MapType}/{Zoom}/{X or Y}/{Y or X}.png`
-	- **[Yaapu EthosMappingWidget](https://github.com/yaapu/EthosMappingWidget/tree/main):**
+	- **[Yaapu - ETHOS](https://github.com/yaapu/EthosMappingWidget/tree/main):**
 	 - Output path: `/bitmaps/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.png`
-	 - **Note:** For Yaapu, regardless of the selected provider (including ESRI or OSM), the output folder will always use the "Google" naming convention (`GoogleMap`, `GoogleSatelliteMap`, or `GoogleHybridMap`). This is required for compatibility with the Yaapu widget. For example, if you select ESRI as the provider and Satellite as the map type, the output will still be placed in `/bitmaps/yaapu/maps/GoogleSatelliteMap/...` even though the tiles are from ESRI.
+	- **[Yaapu - EdgeTX](https://github.com/yaapu/HorusMappingWidget):**
+	 - Output path: `/IMAGES/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.png`
+	 - **Note:** For both Yaapu sub-targets, regardless of the selected provider (including ESRI or OSM), the output folder will always use the "Google" naming convention (`GoogleMap`, `GoogleSatelliteMap`, or `GoogleHybridMap`). This is required for compatibility with the Yaapu widget. For example, if you select ESRI as the provider and Satellite as the map type, the output will still be placed in `.../GoogleSatelliteMap/...` even though the tiles are from ESRI. This applies equally to Yaapu - ETHOS (`/bitmaps/yaapu/maps/...`) and Yaapu - EdgeTX (`/IMAGES/yaapu/maps/...`).
 - **Direct SD Card Sync:** If your browser supports the File System Access API (Chrome; Edge), write tiles directly to your SD card.
 - **ZIP Download Fallback:** If SD card access is not available, the tool will offer a ZIP download for manual transfer.
 
