@@ -165,6 +165,16 @@
                 <option value="yaapu">Yaapu</option>
             </select>
         </div>
+        <div id="b14ckyyFormatDiv" style="display:block;">
+            <div class="label">Output Format</div>
+            <select id="b14ckyyFormat" onchange="saveSettings();">
+                <option value="png" selected>PNG (default)</option>
+                <option value="jpg70">JPEG - 70% quality</option>
+                <option value="jpg80">JPEG - 80% quality</option>
+                <option value="jpg90">JPEG - 90% quality</option>
+                <option value="bmp565">BMP RGB565 / 16-bit</option>
+            </select>
+        </div>
         <div id="yaapuSubTargetDiv" style="display:none;">
             <div class="label">Yaapu Sub-Target</div>
             <select id="yaapuSubTarget" onchange="saveSettings();">
@@ -287,6 +297,7 @@
                 mapCenter: map.getCenter(),
                 mapZoom: map.getZoom(),
                 yaapuSubTarget: document.getElementById('yaapuSubTarget') ? document.getElementById('yaapuSubTarget').value : 'FrSkyTelemetryScript',
+                b14ckyyFormat: document.getElementById('b14ckyyFormat') ? document.getElementById('b14ckyyFormat').value : 'png',
                 rememberOn: true
             };
             localStorage.setItem('mapGenSettings', JSON.stringify(settings));
@@ -316,6 +327,7 @@
             if(s.provider) provider.value = s.provider;
             syncMapOptions();
             if(s.yaapuSubTarget) { const el = document.getElementById('yaapuSubTarget'); if(el) el.value = s.yaapuSubTarget; }
+            if(s.b14ckyyFormat) { const el = document.getElementById('b14ckyyFormat'); if(el) el.value = s.b14ckyyFormat; }
             if(s.mapType) mapTypeChoice.value = s.mapType;
             if(s.projectName) projectName.value = s.projectName;
             if(s.minZoom) minZoom.value = s.minZoom;
@@ -353,6 +365,8 @@
             targetWidget.value = 'b14ckyy';
             const yaapuSubTargetRestore = document.getElementById('yaapuSubTarget');
             if (yaapuSubTargetRestore) yaapuSubTargetRestore.value = 'FrSkyTelemetryScript';
+            const b14ckyyFormatRestore = document.getElementById('b14ckyyFormat');
+            if (b14ckyyFormatRestore) b14ckyyFormatRestore.value = 'png';
             provider.value = 'OSM';
             syncMapOptions();
             mapTypeChoice.value = 'Street';
@@ -614,6 +628,8 @@
             }
             const yaapuSubTargetDiv = document.getElementById('yaapuSubTargetDiv');
             if (yaapuSubTargetDiv) yaapuSubTargetDiv.style.display = (target === 'yaapu') ? 'block' : 'none';
+            const b14ckyyFormatDiv = document.getElementById('b14ckyyFormatDiv');
+            if (b14ckyyFormatDiv) b14ckyyFormatDiv.style.display = (target === 'b14ckyy') ? 'block' : 'none';
         }
 
         /* SD card linking uses the File System Access API when the browser supports it. */
@@ -934,14 +950,15 @@
         }
 
         /* Build the output folder structure for the selected target widget format. */
-        function getTilePath(target, isZipMode, provider, mapType, z, x, y) {
+        function getTilePath(target, isZipMode, provider, mapType, z, x, y, format) {
+            const ext = format === 'bmp565' ? 'bmp' : (format && format.startsWith('jpg')) ? 'jpg' : 'png';
             const displayZoom = z.toString();
             if (target === 'b14ckyy') {
                 const base = isZipMode ? ["ethosmaps", "maps"] : ["bitmaps", "ethosmaps", "maps"];
                 if (provider === 'ESRI') {
-                    return [...base, provider, mapType, displayZoom, `${y}`, `${x}.png`];
+                    return [...base, provider, mapType, displayZoom, `${y}`, `${x}.${ext}`];
                 }
-                return [...base, provider, mapType, displayZoom, `${x}`, `${y}.png`];
+                return [...base, provider, mapType, displayZoom, `${x}`, `${y}.${ext}`];
             }
             const yaapuMapName = (mapType === 'Satellite') ? 'GoogleSatelliteMap' : (mapType === 'Hybrid' ? 'GoogleHybridMap' : 'GoogleMap');
             const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
@@ -961,13 +978,58 @@
             return { canvas, ctx: canvas.getContext('2d') };
         }
 
-        /* Convert a resized tile canvas into a PNG blob for storage or ZIP export. */
-        function canvasToBlob(canvas) {
+        /* Encode canvas pixel data as a BMP file in RGB565 (16-bit) format. */
+        function canvasToBmpRGB565Blob(canvas) {
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const pixels = ctx.getImageData(0, 0, w, h).data;
+            const rowSize = w * 2; // 2 bytes/pixel, 100px row = 200 bytes (4-byte aligned)
+            const pixelDataSize = rowSize * h;
+            const fileHeaderSize = 14, dibHeaderSize = 40, colorMasksSize = 12;
+            const headerSize = fileHeaderSize + dibHeaderSize + colorMasksSize;
+            const fileSize = headerSize + pixelDataSize;
+            const buffer = new ArrayBuffer(fileSize);
+            const view = new DataView(buffer);
+            let o = 0;
+            // File header
+            view.setUint8(o++, 0x42); view.setUint8(o++, 0x4D); // 'BM'
+            view.setUint32(o, fileSize, true); o += 4;
+            view.setUint32(o, 0, true); o += 4; // reserved
+            view.setUint32(o, headerSize, true); o += 4; // pixel data offset
+            // DIB header (BITMAPINFOHEADER)
+            view.setUint32(o, dibHeaderSize, true); o += 4;
+            view.setInt32(o, w, true); o += 4;
+            view.setInt32(o, -h, true); o += 4; // negative = top-down
+            view.setUint16(o, 1, true); o += 2; // color planes
+            view.setUint16(o, 16, true); o += 2; // bits per pixel
+            view.setUint32(o, 3, true); o += 4; // BI_BITFIELDS compression
+            view.setUint32(o, pixelDataSize, true); o += 4;
+            view.setInt32(o, 2835, true); o += 4; // ~72 DPI X
+            view.setInt32(o, 2835, true); o += 4; // ~72 DPI Y
+            view.setUint32(o, 0, true); o += 4;
+            view.setUint32(o, 0, true); o += 4;
+            // RGB565 bit masks
+            view.setUint32(o, 0xF800, true); o += 4; // R mask
+            view.setUint32(o, 0x07E0, true); o += 4; // G mask
+            view.setUint32(o, 0x001F, true); o += 4; // B mask
+            // Pixel data
+            for (let i = 0; i < w * h; i++) {
+                const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
+                view.setUint16(o, ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3), true); o += 2;
+            }
+            return new Blob([buffer], { type: 'image/bmp' });
+        }
+
+        /* Convert a resized tile canvas into a blob for storage or ZIP export. */
+        function canvasToBlob(canvas, format) {
+            if (format === 'bmp565') return Promise.resolve(canvasToBmpRGB565Blob(canvas));
+            const mimeType = (format && format.startsWith('jpg')) ? 'image/jpeg' : 'image/png';
+            const quality = format === 'jpg70' ? 0.7 : format === 'jpg80' ? 0.8 : format === 'jpg90' ? 0.9 : undefined;
             return new Promise((resolve, reject) => {
                 canvas.toBlob(blob => {
                     if (!blob) return reject(new Error('Canvas conversion failed'));
                     resolve(blob);
-                }, 'image/png');
+                }, mimeType, quality);
             });
         }
 
@@ -1016,7 +1078,7 @@
         }
 
         /* Download and resize a single tile, adding label overlay imagery where required. */
-        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx) {
+        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, format) {
             const img = await loadImage(getTileUrl(provider, mapType, z, x, y));
             ctx.clearRect(0, 0, 100, 100);
             ctx.drawImage(img, 0, 0, 256, 256, 0, 0, 100, 100);
@@ -1027,7 +1089,7 @@
                     ctx.drawImage(labelImg, 0, 0, 256, 256, 0, 0, 100, 100);
                 } catch (e) {}
             }
-            const blob = await canvasToBlob(canvas);
+            const blob = await canvasToBlob(canvas, format);
             if (!isLikelyValidTileBlob(blob)) {
                 throw new Error('Generated tile blob failed integrity check');
             }
@@ -1035,11 +1097,11 @@
         }
 
         /* Retry transient tile download failures before declaring a tile lost. */
-        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx) {
+        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, format) {
             let lastError = null;
             for (let attempt = 0; attempt <= MAX_TILE_RETRIES; attempt++) {
                 try {
-                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx);
+                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, format);
                 } catch (err) {
                     lastError = err;
                     if (attempt < MAX_TILE_RETRIES) {
@@ -1135,12 +1197,15 @@
                 else displayMapType = 'GoogleMap';
             }
 
+            const b14ckyyFormatElSync = document.getElementById('b14ckyyFormat');
+            const syncTileFormat = (target === 'b14ckyy' && b14ckyyFormatElSync) ? b14ckyyFormatElSync.value : 'png';
+            const syncExt = syncTileFormat === 'bmp565' ? 'bmp' : (syncTileFormat.startsWith('jpg') ? 'jpg' : 'png');
             let targetPath;
             if (target === 'b14ckyy') {
                 if (provider === 'ESRI') {
-                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].png`;
+                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].${syncExt}`;
                 } else {
-                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
+                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].${syncExt}`;
                 }
             } else {
                 const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
@@ -1239,6 +1304,8 @@
 
             let nextTileIndex = 0;
             const workerCount = Math.max(1, Math.min(TILE_CONCURRENCY, tiles.length));
+            const b14ckyyFormatEl = document.getElementById('b14ckyyFormat');
+            const tileFormat = (target === 'b14ckyy' && b14ckyyFormatEl) ? b14ckyyFormatEl.value : 'png';
 
             const workers = Array.from({ length: workerCount }, async () => {
                 const { canvas, ctx } = createWorkerCanvas();
@@ -1247,13 +1314,13 @@
                     if (currentIndex >= tiles.length) break;
 
                     const { z, x, y } = tiles[currentIndex];
-                    const tileId = `${provider}/${mapType}/${z}/${x}/${y}`;
+                    const tileId = `${provider}/${mapType}/${tileFormat}/${z}/${x}/${y}`;
                     try {
                         if (!zipCache[tileId] || forceOverwrite) {
-                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx);
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, tileFormat);
                         }
 
-                        const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y);
+                        const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y, tileFormat);
                         if (sdHandle) {
                             let currentDir = sdHandle;
                             for (let i = 0; i < pathArr.length - 1; i++) {
@@ -1306,12 +1373,15 @@
                         else if (mapType === 'Hybrid') displayMapType = 'GoogleHybridMap';
                         else displayMapType = 'GoogleMap';
                     }
+                    const b14ckyyFormatElDone = document.getElementById('b14ckyyFormat');
+                    const doneTileFormat = (target === 'b14ckyy' && b14ckyyFormatElDone) ? b14ckyyFormatElDone.value : 'png';
+                    const doneExt = doneTileFormat === 'bmp565' ? 'bmp' : (doneTileFormat.startsWith('jpg') ? 'jpg' : 'png');
                     let targetPath;
                     if (target === 'b14ckyy') {
                         if (provider === 'ESRI') {
-                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].png`;
+                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].${doneExt}`;
                         } else {
-                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
+                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].${doneExt}`;
                         }
                     } else {
                         const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
