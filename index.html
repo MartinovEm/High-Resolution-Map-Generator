@@ -980,42 +980,31 @@
 
         /* Encode canvas pixel data as a BMP file in RGB565 (16-bit) format. */
         function canvasToBmpRGB565Blob(canvas) {
-            const ctx = canvas.getContext('2d');
             const w = canvas.width, h = canvas.height;
-            const pixels = ctx.getImageData(0, 0, w, h).data;
-            const rowSize = w * 2; // 2 bytes/pixel, 100px row = 200 bytes (4-byte aligned)
-            const pixelDataSize = rowSize * h;
-            const fileHeaderSize = 14, dibHeaderSize = 40, colorMasksSize = 12;
-            const headerSize = fileHeaderSize + dibHeaderSize + colorMasksSize;
-            const fileSize = headerSize + pixelDataSize;
+            const imgData = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+            const padding = (4 - (w * 2) % 4) % 4;
+            const fileSize = 54 + (w * 2 + padding) * h;
             const buffer = new ArrayBuffer(fileSize);
             const view = new DataView(buffer);
-            let o = 0;
-            // File header
-            view.setUint8(o++, 0x42); view.setUint8(o++, 0x4D); // 'BM'
-            view.setUint32(o, fileSize, true); o += 4;
-            view.setUint32(o, 0, true); o += 4; // reserved
-            view.setUint32(o, headerSize, true); o += 4; // pixel data offset
-            // DIB header (BITMAPINFOHEADER)
-            view.setUint32(o, dibHeaderSize, true); o += 4;
-            view.setInt32(o, w, true); o += 4;
-            view.setInt32(o, -h, true); o += 4; // negative = top-down
-            view.setUint16(o, 1, true); o += 2; // color planes
-            view.setUint16(o, 16, true); o += 2; // bits per pixel
-            view.setUint32(o, 3, true); o += 4; // BI_BITFIELDS compression
-            view.setUint32(o, pixelDataSize, true); o += 4;
-            view.setInt32(o, 2835, true); o += 4; // ~72 DPI X
-            view.setInt32(o, 2835, true); o += 4; // ~72 DPI Y
-            view.setUint32(o, 0, true); o += 4;
-            view.setUint32(o, 0, true); o += 4;
-            // RGB565 bit masks
-            view.setUint32(o, 0xF800, true); o += 4; // R mask
-            view.setUint32(o, 0x07E0, true); o += 4; // G mask
-            view.setUint32(o, 0x001F, true); o += 4; // B mask
-            // Pixel data
-            for (let i = 0; i < w * h; i++) {
-                const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
-                view.setUint16(o, ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3), true); o += 2;
+            view.setUint16(0, 0x424D, false);       // 'BM'
+            view.setUint32(2, fileSize, true);
+            view.setUint32(10, 54, true);             // pixel data offset
+            view.setUint32(14, 40, true);             // DIB header size
+            view.setInt32(18, w, true);
+            view.setInt32(22, h, true);               // positive = bottom-up
+            view.setUint16(26, 1, true);              // color planes
+            view.setUint16(28, 16, true);             // bits per pixel
+            view.setUint32(30, 0, true);              // BI_RGB (no compression)
+            let offset = 54;
+            for (let y = h - 1; y >= 0; y--) {
+                for (let x = 0; x < w; x++) {
+                    const i = (y * w + x) * 4;
+                    const r = (imgData[i]     >> 3) & 0x1F;
+                    const g = (imgData[i + 1] >> 2) & 0x3F;
+                    const b = (imgData[i + 2] >> 3) & 0x1F;
+                    view.setUint16(offset, (r << 11) | (g << 5) | b, true); offset += 2;
+                }
+                for (let p = 0; p < padding; p++) view.setUint8(offset++, 0);
             }
             return new Blob([buffer], { type: 'image/bmp' });
         }
