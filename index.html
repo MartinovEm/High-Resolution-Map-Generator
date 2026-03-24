@@ -703,11 +703,25 @@
 
         /* Register core Leaflet controls: search, scale, rectangle drawing, units, and location. */
         const geocoder = L.Control.geocoder({ defaultMarkGeocode: false, position: 'topleft', placeholder: "SEARCH" }).on('markgeocode', e => map.fitBounds(e.geocode.bbox)).addTo(map);
-        L.control.scale({ imperial: false, metric: true, position: 'bottomleft' }).addTo(map);
+        let scaleControl = L.control.scale({ imperial: false, metric: true, position: 'bottomleft' });
+        scaleControl.addTo(map);
         const drawnItems = new L.FeatureGroup(); map.addLayer(drawnItems);
         const drawControl = new L.Control.Draw({ draw: { rectangle: { shapeOptions: { color: '#ff0000', weight: 2, fillOpacity: 0.1 } }, polyline: false, polygon: false, circle: false, marker: false, circlemarker: false }, edit: { featureGroup: drawnItems, remove: false } });
         map.addControl(drawControl);
-        
+
+        /* Override Leaflet Draw's built-in area formatter so the live tooltip
+           respects the user-selected unit instead of always showing hectares. */
+        L.GeometryUtil.readableArea = function(area, isMetric) {
+            const unit = (typeof currentAreaUnit !== 'undefined') ? currentAreaUnit : 'km2';
+            switch(unit) {
+                case 'km2':  return (area / 1000000).toFixed(2) + ' km²';
+                case 'mi2':  return (area / 2589988.11).toFixed(2) + ' mi²';
+                case 'ha':   return (area / 10000).toFixed(2) + ' ha';
+                case 'acre': return (area / 4046.86).toFixed(2) + ' acre';
+                default:     return area.toFixed(0) + ' m²';
+            }
+        };
+
         const AreaUnitControl = L.Control.extend({ 
             options: { position: 'topleft' }, 
             onAdd: function(map) { 
@@ -751,6 +765,17 @@
 
         let currentAreaUnit = 'km2'; 
 
+        /* Convert raw meters into the currently selected linear display unit. */
+        function formatDistance(meters) {
+            switch(currentAreaUnit) {
+                case 'km2':  return meters >= 1000 ? (meters / 1000).toFixed(2) + ' km' : Math.round(meters) + ' m';
+                case 'mi2':  { const mi = meters / 1609.344; return mi >= 1 ? mi.toFixed(2) + ' mi' : Math.round(meters * 3.28084) + ' ft'; }
+                case 'ha':   return meters >= 1000 ? (meters / 1000).toFixed(2) + ' km' : Math.round(meters) + ' m';
+                case 'acre': { const mi = meters / 1609.344; return mi >= 1 ? mi.toFixed(2) + ' mi' : Math.round(meters * 3.28084) + ' ft'; }
+                default:     return meters >= 1000 ? (meters / 1000).toFixed(2) + ' km' : Math.round(meters) + ' m';
+            }
+        }
+
         /* Convert raw square meters into the currently selected display unit. */
         function formatArea(sqMeters) { 
             if (sqMeters === 0) return "0.00 " + currentAreaUnit; 
@@ -762,12 +787,19 @@
                 default: return sqMeters.toFixed(0) + ' m²';
             }
         }
-        window.changeAreaUnit = function() { currentAreaUnit = document.getElementById('areaUnitSelect').value; triggerUpdate(); };
+        window.changeAreaUnit = function() {
+            currentAreaUnit = document.getElementById('areaUnitSelect').value;
+            map.removeControl(scaleControl);
+            const useImperial = (currentAreaUnit === 'mi2' || currentAreaUnit === 'acre');
+            scaleControl = L.control.scale({ imperial: useImperial, metric: !useImperial, position: 'bottomleft' });
+            scaleControl.addTo(map);
+            triggerUpdate();
+        };
 
         /* Update side labels, area readout, and tile estimate for the current selection box. */
         function updateSideLabels(layer) {
             const latlngs = layer.getLatLngs()[0], bounds = layer.getBounds(), minZ = parseInt(document.getElementById('minZoom').value), maxZ = parseInt(document.getElementById('maxZoom').value), area = L.GeometryUtil.geodesicArea(latlngs), tiles = calculateTiles(bounds, minZ, maxZ);
-            const wM = latlngs[0].distanceTo(latlngs[1]), hM = latlngs[1].distanceTo(latlngs[2]), wS = wM >= 1000 ? (wM/1000).toFixed(2)+'km' : Math.round(wM)+'m', hS = hM >= 1000 ? (hM/1000).toFixed(2)+'km' : Math.round(hM)+'m';
+            const wM = latlngs[0].distanceTo(latlngs[1]), hM = latlngs[1].distanceTo(latlngs[2]), wS = formatDistance(wM), hS = formatDistance(hM);
             const midT = L.latLng((latlngs[0].lat + latlngs[1].lat)/2, (latlngs[0].lng + latlngs[1].lng)/2), midL = L.latLng((latlngs[1].lat + latlngs[2].lat)/2, (latlngs[1].lng + latlngs[2].lng)/2);
             if (!labels.width) { labels.width = L.marker(midT, { icon: L.divIcon({ className: 'side-label', html: wS }) }).addTo(map); labels.height = L.marker(midL, { icon: L.divIcon({ className: 'side-label', html: hS }) }).addTo(map); }
             else { labels.width.setLatLng(midT).setIcon(L.divIcon({ className: 'side-label', html: wS })); labels.height.setLatLng(midL).setIcon(L.divIcon({ className: 'side-label', html: hS })); }
