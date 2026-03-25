@@ -165,6 +165,13 @@
                 <option value="yaapu">Yaapu</option>
             </select>
         </div>
+        <div id="yaapuSubTargetDiv" style="display:none;">
+            <div class="label">Yaapu Sub-Target</div>
+            <select id="yaapuSubTarget" onchange="saveSettings();">
+                <option value="FrSkyTelemetryScript">Yaapu - ETHOS</option>
+                <option value="HorusMappingWidget">Yaapu - EdgeTX</option>
+            </select>
+        </div>
         <div>
             <div class="label">Provider</div>
             <select id="provider" onchange="syncMapOptions(); switchMapLayer(); saveSettings();">
@@ -279,6 +286,7 @@
                 maxZoom: maxZoom.value,
                 mapCenter: map.getCenter(),
                 mapZoom: map.getZoom(),
+                yaapuSubTarget: document.getElementById('yaapuSubTarget') ? document.getElementById('yaapuSubTarget').value : 'FrSkyTelemetryScript',
                 rememberOn: true
             };
             localStorage.setItem('mapGenSettings', JSON.stringify(settings));
@@ -307,6 +315,7 @@
             if(s.targetWidget) targetWidget.value = s.targetWidget;
             if(s.provider) provider.value = s.provider;
             syncMapOptions();
+            if(s.yaapuSubTarget) { const el = document.getElementById('yaapuSubTarget'); if(el) el.value = s.yaapuSubTarget; }
             if(s.mapType) mapTypeChoice.value = s.mapType;
             if(s.projectName) projectName.value = s.projectName;
             if(s.minZoom) minZoom.value = s.minZoom;
@@ -342,6 +351,8 @@
             }
             saveToggle.checked = false;
             targetWidget.value = 'b14ckyy';
+            const yaapuSubTargetRestore = document.getElementById('yaapuSubTarget');
+            if (yaapuSubTargetRestore) yaapuSubTargetRestore.value = 'FrSkyTelemetryScript';
             provider.value = 'OSM';
             syncMapOptions();
             mapTypeChoice.value = 'Street';
@@ -601,6 +612,8 @@
             } else {
                 yWarning.style.display = "none";
             }
+            const yaapuSubTargetDiv = document.getElementById('yaapuSubTargetDiv');
+            if (yaapuSubTargetDiv) yaapuSubTargetDiv.style.display = (target === 'yaapu') ? 'block' : 'none';
         }
 
         /* SD card linking uses the File System Access API when the browser supports it. */
@@ -963,6 +976,11 @@
                 return [...base, provider, mapType, displayZoom, `${x}`, `${y}.png`];
             }
             const yaapuMapName = (mapType === 'Satellite') ? 'GoogleSatelliteMap' : (mapType === 'Hybrid' ? 'GoogleHybridMap' : 'GoogleMap');
+            const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
+            const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
+            if (yaapuSubTarget === 'HorusMappingWidget') {
+                return ["IMAGES", "yaapu", "maps", yaapuMapName, displayZoom, `${y}`, `s_${x}.png`];
+            }
             const base = isZipMode ? ["yaapu", "maps"] : ["bitmaps", "yaapu", "maps"];
             return [...base, yaapuMapName, displayZoom, `${y}`, `s_${x}.png`];
         }
@@ -1157,11 +1175,16 @@
                     targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
                 }
             } else {
-                targetPath = `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
+                const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
+                const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
+                targetPath = yaapuSubTarget === 'HorusMappingWidget'
+                    ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`
+                    : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
             }
 
+            const targetDisplayName = target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
             document.getElementById('syncInfo').innerHTML = `
-                <div class="sync-info-row"><span>Target Widget:</span><span>${target === 'b14ckyy' ? 'b14ckyy' : 'Yaapu'}</span></div>
+                <div class="sync-info-row"><span>Target Widget:</span><span>${targetDisplayName}</span></div>
                 <div class="sync-info-row"><span>Total Tiles:</span><span>${calculateTiles(bounds, parseInt(minZ), parseInt(maxZ)).toLocaleString()}</span></div>
                 <div class="sync-info-row"><span>Project Name:</span><span>${projectName}</span></div>
                 <div class="sync-info-row"><span>Zoom Range:</span><span>${minZ} - ${maxZ}</span></div>
@@ -1323,7 +1346,11 @@
                             targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
                         }
                     } else {
-                        targetPath = `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
+                        const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
+                        const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
+                        targetPath = yaapuSubTarget === 'HorusMappingWidget'
+                            ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`
+                            : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
                     }
                     // Try to get area and zooms from last sync
                     let areaValue = '';
@@ -1338,8 +1365,9 @@
                         }
                     } catch (e) {}
                     document.getElementById('modalHeader').innerText = 'Sync Complete!';
+                    const confirmTargetDisplayName = target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
                     document.getElementById('syncInfo').innerHTML = `
-                        <div class="sync-info-row"><span>Target Widget:</span><span>${target === 'b14ckyy' ? 'b14ckyy' : 'Yaapu'}</span></div>
+                        <div class="sync-info-row"><span>Target Widget:</span><span>${confirmTargetDisplayName}</span></div>
                         <div class="sync-info-row"><span>Total Tiles:</span><span>${totalTiles}</span></div>
                         <div class="sync-info-row"><span>Project Name:</span><span>${projectName}</span></div>
                         <div class="sync-info-row"><span>Zoom Range:</span><span>${minZ} - ${maxZ}</span></div>
