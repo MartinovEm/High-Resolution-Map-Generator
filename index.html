@@ -787,9 +787,14 @@
             const midT = L.latLng((latlngs[0].lat + latlngs[1].lat)/2, (latlngs[0].lng + latlngs[1].lng)/2), midL = L.latLng((latlngs[1].lat + latlngs[2].lat)/2, (latlngs[1].lng + latlngs[2].lng)/2);
             if (!labels.width) { labels.width = L.marker(midT, { icon: L.divIcon({ className: 'side-label', html: wS }) }).addTo(map); labels.height = L.marker(midL, { icon: L.divIcon({ className: 'side-label', html: hS }) }).addTo(map); }
             else { labels.width.setLatLng(midT).setIcon(L.divIcon({ className: 'side-label', html: wS })); labels.height.setLatLng(midL).setIcon(L.divIcon({ className: 'side-label', html: hS })); }
+            const maxZoomTiles = calculateTiles(bounds, maxZ, maxZ);
             const status = document.getElementById('status');
             if (status) {
-                status.innerHTML = `<span style=\"color:#ffeb3b\">Area: ${formatArea(area)}</span><br><span style=\"color:#87b025\">Total Sync Tiles (100x100 PNG): ${tiles.toLocaleString()}</span>`;
+                let html = `<span style="color:#ffeb3b">Area: ${formatArea(area)}</span><br><span style="color:#87b025">Total Sync Tiles (100x100 PNG): ${tiles.toLocaleString()}</span>`;
+                if (maxZoomTiles < 64) {
+                    html += `<br><span style="color:#ff5252">⚠️ Low tile coverage at max zoom (${maxZoomTiles} tiles). Consider increasing max zoom.</span>`;
+                }
+                status.innerHTML = html;
                 status.style.color = '#ffeb3b';
             }
         }
