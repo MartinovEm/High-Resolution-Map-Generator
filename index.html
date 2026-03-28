@@ -70,7 +70,7 @@
         #syncDock.map-dock { pointer-events: auto; background: rgba(30, 30, 30, 0.92); border: 2px solid #87b025; border-radius: 6px; padding: 10px; box-shadow: 0 0 12px rgba(0,0,0,0.55); }
         #syncDock.map-dock #syncBtn { margin-top: 0; width: 100%; }
         #syncDock.map-dock #status { margin-top: 0; min-height: auto; }
-        #map.sync-dock-visible #mouse-coords { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); }
+        #map.sync-dock-visible #mouse-coords { bottom: calc(26px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); }
         #map.sync-dock-visible .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); }
         #map:fullscreen #mouse-coords, #map:fullscreen #syncDockMapHost, #map:fullscreen .leaflet-bottom { --viewport-bottom-offset: 0px !important; }
         #map:fullscreen.sync-dock-visible #mouse-coords { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
@@ -87,7 +87,7 @@
         .leaflet-control-scale { padding: 0 !important; margin: 0 0 0 10px !important; }
         .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)) !important; }
         #map.sync-dock-visible .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)) !important; }
-        #mouse-coords { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); right: 10px; white-space: nowrap; }
+        #mouse-coords { position: absolute; bottom: calc(26px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); right: 10px; white-space: nowrap; }
         .measuring-addon { border-right: 1px solid rgba(135, 176, 37, 0.5); margin-right: 10px; padding-right: 10px; color: #ffeb3b; }
         
         #zoom-display-map, #measure-btn-map, #fullscreen-btn-map { position: absolute; right: 10px; z-index: 1005; background: rgba(30, 30, 30, 0.9); color: #87b025; border: 2px solid #87b025; border-radius: 4px; font-weight: bold; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px; width: 101px; height: 26px; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
@@ -580,14 +580,14 @@
         });
 
         /* Provider and overlay layers used by the different export modes. */
-        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 });
-        const esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true });
-        const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true });
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' });
+        const esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true, attribution: '&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Sources: Esri, Maxar, Earthstar Geographics' });
+        const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true, attribution: '&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Sources: Esri, Maxar, Earthstar Geographics' });
         const esriLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, crossOrigin: true, pane: 'shadowPane' });
         
-        const googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20 });
-        const googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20 });
-        const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20 });
+        const googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Map data &copy; <a href="https://www.google.com/intl/en/help/terms_maps/">Google</a>' });
+        const googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Map data &copy; <a href="https://www.google.com/intl/en/help/terms_maps/">Google</a>' });
+        const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Map data &copy; <a href="https://www.google.com/intl/en/help/terms_maps/">Google</a>' });
         
         /* Start in a safe default mode that does not depend on premium imagery providers. */
         let currentLayer = osmLayer; currentLayer.addTo(map);
