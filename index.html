@@ -1334,6 +1334,7 @@
             pushProgress(true);
 
             let nextTileIndex = 0, consecutiveErrors = 0;
+            const failedTiles = [];
             const workerCount = Math.max(1, Math.min(TILE_CONCURRENCY, tiles.length));
             const b14ckyyFormatEl = document.getElementById('b14ckyyFormat');
             const tileFormat = (target === 'b14ckyy' && b14ckyyFormatEl) ? b14ckyyFormatEl.value : 'png';
@@ -1372,6 +1373,7 @@
                         failedCount++;
                         errorCount++;
                         consecutiveErrors++;
+                        failedTiles.push({ z, x, y });
                         appendLog(`Tile failed: z${z} x${x} y${y} (${e.message})`, true);
                         if (errorCount === 10) {
                             appendLog('⚠️ Too many errors — tile provider may be rate-limiting. The tool will auto-throttle to recover.', true);
@@ -1384,6 +1386,54 @@
             });
 
             await Promise.all(workers);
+            if (!syncAborted && failedCount === 0) clearLog();
+            if (syncAborted) return;
+
+            /* Auto-retry failed tiles after cooldown — rate limits likely expired by now. */
+            if (failedTiles.length > 0 && !syncAborted) {
+                const retryCount = failedTiles.length;
+                appendLog(`\n🔄 Retrying ${retryCount} failed tile(s) after cooldown...`, false);
+                document.getElementById('downloadStatus').innerText = `Cooling down before retry...`;
+                await sleep(3000);
+
+                let retryRecovered = 0, retryIndex = 0;
+                const retryWorkers = Array.from({ length: Math.max(1, Math.min(2, retryCount)) }, async () => {
+                    const { canvas, ctx } = createWorkerCanvas();
+                    while (!syncAborted) {
+                        const ci = retryIndex++;
+                        if (ci >= failedTiles.length) break;
+                        await sleep(400);
+
+                        const { z, x, y } = failedTiles[ci];
+                        const tileId = `${provider}/${mapType}/${tileFormat}/${z}/${x}/${y}`;
+                        try {
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, tileFormat);
+                            const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y, tileFormat);
+                            if (sdHandle) {
+                                let currentDir = sdHandle;
+                                for (let i = 0; i < pathArr.length - 1; i++) {
+                                    currentDir = await currentDir.getDirectoryHandle(pathArr[i], { create: true });
+                                }
+                                await writeBlobWithVerification(currentDir, pathArr[pathArr.length - 1], zipCache[tileId]);
+                            } else {
+                                let folderPath = zip;
+                                for (let i = 0; i < pathArr.length - 1; i++) {
+                                    folderPath = folderPath.folder(pathArr[i]);
+                                }
+                                folderPath.file(pathArr[pathArr.length - 1], zipCache[tileId]);
+                            }
+                            retryRecovered++;
+                            failedCount--;
+                            appendLog(`✅ Recovered: z${z} x${x} y${y}`, false);
+                        } catch (e) {
+                            appendLog(`❌ Retry failed: z${z} x${x} y${y}`, true);
+                        }
+                        document.getElementById('downloadStatus').innerText = `Retrying: ${ci + 1} / ${retryCount} (recovered: ${retryRecovered})`;
+                    }
+                });
+                await Promise.all(retryWorkers);
+                if (retryRecovered > 0) appendLog(`🔄 Retry recovered ${retryRecovered} of ${retryCount} tile(s).`, false);
+            }
             if (!syncAborted && failedCount === 0) clearLog();
             if (syncAborted) return;
 
