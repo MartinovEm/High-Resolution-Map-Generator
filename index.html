@@ -1071,16 +1071,21 @@
             return blob;
         }
 
-        /* Retry transient tile download failures before declaring a tile lost. */
+        /* Retry transient tile download failures before declaring a tile lost.
+         * Fast-fails (under 1.5s) indicate server rejection (e.g. 403 rate-limit),
+         * so retries are skipped to avoid hammering the provider. */
         async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx) {
             let lastError = null;
             for (let attempt = 0; attempt <= MAX_TILE_RETRIES; attempt++) {
+                const t0 = Date.now();
                 try {
                     return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx);
                 } catch (err) {
                     lastError = err;
+                    const elapsed = Date.now() - t0;
+                    if (elapsed < 1500) break;
                     if (attempt < MAX_TILE_RETRIES) {
-                        await sleep(200 * (attempt + 1));
+                        await sleep(300 * (attempt + 1));
                     }
                 }
             }
@@ -1274,12 +1279,14 @@
 
             pushProgress(true);
 
-            let nextTileIndex = 0;
+            let nextTileIndex = 0, consecutiveErrors = 0;
             const workerCount = Math.max(1, Math.min(TILE_CONCURRENCY, tiles.length));
 
             const workers = Array.from({ length: workerCount }, async () => {
                 const { canvas, ctx } = createWorkerCanvas();
                 while (!syncAborted) {
+                    if (consecutiveErrors >= 5) await sleep(1500);
+                    else if (consecutiveErrors >= 2) await sleep(500);
                     const currentIndex = nextTileIndex++;
                     if (currentIndex >= tiles.length) break;
 
@@ -1289,6 +1296,7 @@
                         if (!zipCache[tileId] || forceOverwrite) {
                             zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx);
                         }
+                        consecutiveErrors = 0;
 
                         const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y);
                         if (sdHandle) {
@@ -1307,9 +1315,10 @@
                     } catch (e) {
                         failedCount++;
                         errorCount++;
+                        consecutiveErrors++;
                         appendLog(`Tile failed: z${z} x${x} y${y} (${e.message})`, true);
                         if (errorCount === 10) {
-                            appendLog('⚠️ Too many errors. Consider using ZIP download mode for better reliability.', true);
+                            appendLog('⚠️ Too many errors — tile provider may be rate-limiting. The tool will auto-throttle to recover.', true);
                         }
                     } finally {
                         processed++;
@@ -1398,7 +1407,7 @@
         }
 
         /* Load an image with timeout protection so stuck requests do not block the export queue. */
-        function loadImage(url, timeoutMs = 12000) {
+        function loadImage(url, timeoutMs = 6000) {
             return new Promise((res, rej) => {
                 const img = new Image();
                 let finished = false;
