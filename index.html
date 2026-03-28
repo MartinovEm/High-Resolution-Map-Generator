@@ -555,14 +555,20 @@
             }
         }
 
-        /* Build the zoom selectors once at startup. */
+        /* Build the zoom selectors, respecting per-provider max zoom. */
+        const PROVIDER_MAX_ZOOM = { OSM: 19, ESRI: 20, GOOGLE: 20 };
         const minZSelect = document.getElementById('minZoom'), maxZSelect = document.getElementById('maxZoom');
-        for (let i = 1; i <= 20; i++) {
-            const optMin = new Option(i, i), optMax = new Option(i, i);
-            if (i === 8) optMin.selected = true;
-            if (i === 14) optMax.selected = true;
-            minZSelect.add(optMin); maxZSelect.add(optMax);
+        function rebuildZoomSelectors(maxZ) {
+            const prevMin = parseInt(minZSelect.value) || 8, prevMax = parseInt(maxZSelect.value) || 14;
+            minZSelect.innerHTML = ''; maxZSelect.innerHTML = '';
+            for (let i = 1; i <= maxZ; i++) {
+                minZSelect.add(new Option(i, i));
+                maxZSelect.add(new Option(i, i));
+            }
+            minZSelect.value = Math.min(prevMin, maxZ);
+            maxZSelect.value = Math.min(prevMax, maxZ);
         }
+        rebuildZoomSelectors(20);
 
         /* Initialize the Leaflet map and keep layout-sensitive UI synchronized with map changes. */
         const map = L.map('map', {zoomControl: true, doubleClickZoom: false, scrollWheelZoom: true, tap: true}).setView([42.6977, 23.3219], 12);
@@ -614,6 +620,8 @@
             }
             const yaapuSubTargetDiv = document.getElementById('yaapuSubTargetDiv');
             if (yaapuSubTargetDiv) yaapuSubTargetDiv.style.display = (target === 'yaapu') ? 'block' : 'none';
+
+            rebuildZoomSelectors(PROVIDER_MAX_ZOOM[provider] || 20);
         }
 
         /* SD card linking uses the File System Access API when the browser supports it. */
