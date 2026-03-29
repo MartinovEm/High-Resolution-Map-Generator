@@ -611,6 +611,10 @@
                   gWarning = document.getElementById('googleWarning'),
                   yWarning = document.getElementById('yaapuWarning');
             
+            if (target === 'terrain' && preTerrainMapType === null) {
+                preTerrainMapType = typeSelect.value;
+            }
+            
             let options = '<option value="Satellite">Satellite</option><option value="Street" selected>Street</option>';
             if (provider !== "OSM") options += '<option value="Hybrid">Hybrid (Sat + Labels)</option>';
             
@@ -1637,6 +1641,7 @@
         }
 
         var preTerrainZoom = null;
+        var preTerrainMapType = null;
 
         function updateTerrainMode() {
             const isTerrain = isTerrainMode();
@@ -1673,6 +1678,19 @@
             if (isTerrain) {
                 const yst = document.getElementById('yaapuSubTargetDiv');
                 if (yst) yst.style.display = 'none';
+            }
+            if (isTerrain) {
+                if (currentLayer) map.removeLayer(currentLayer);
+                if (map.hasLayer(esriLabels)) map.removeLayer(esriLabels);
+                currentLayer = osmLayer;
+                currentLayer.addTo(map);
+                mapContainer.classList.remove('dark-contrast-theme');
+            } else {
+                if (preTerrainMapType) {
+                    document.getElementById('mapTypeChoice').value = preTerrainMapType;
+                    preTerrainMapType = null;
+                }
+                switchMapLayer();
             }
             updateTerrainGrid();
             if (drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]);
