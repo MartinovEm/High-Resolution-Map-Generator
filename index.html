@@ -132,7 +132,8 @@
         #syncModal { background: #1e1e1e; border: 2px solid #87b025; color: #fff; width: 90%; max-width: 420px; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(135,176,37,0.3); }
         #syncModal h3 { margin-top: 0; color: #87b025; text-align: center; }
         .sync-info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; border-bottom: 1px solid #333; padding-bottom: 4px;}
-        .sync-info-row span:last-child { font-weight: bold; color: #ffeb3b; }
+        .sync-info-row span:first-child { flex-shrink: 0; margin-right: 10px; }
+        .sync-info-row span:last-child { font-weight: bold; color: #ffeb3b; text-align: right; }
         .progress-bar-bg { background: #333; width: 100%; height: 12px; border-radius: 6px; margin: 20px 0; overflow: hidden; }
         #progressFill { background: #87b025; width: 0%; height: 100%; transition: width 0.1s; }
         .modal-buttons { display: flex; gap: 10px; margin-top: 15px; }
@@ -140,6 +141,8 @@
         .btn-cancel { background: #444; color: #fff; }
         .btn-confirm { background: #87b025; color: #fff; }
         .overwrite-opt { margin-top: 10px; font-size: 13px; color: #aaa; display: flex; align-items: center; gap: 8px; }
+        .terrain-grid-label { background: transparent !important; border: none !important; color: #fff !important; font-family: 'Consolas', monospace !important; font-size: 10px !important; white-space: nowrap !important; text-align: center !important; pointer-events: none !important; }
+        .terrain-grid-label span { display: inline-block; border-radius: 3px; color: #fff; font-family: 'Consolas', monospace; white-space: nowrap; text-align: center; box-shadow: 0 0 3px rgba(0,0,0,0.4); }
     </style>
 </head>
 <body>
@@ -163,6 +166,7 @@
             <select id="targetWidget" onchange="syncMapOptions(); saveSettings();">
                 <option value="b14ckyy">b14ckyy ETHOS Mapping Widget</option>
                 <option value="yaapu">Yaapu</option>
+                <option value="terrain">INAV Terrain (SRTM)</option>
             </select>
         </div>
         <div id="yaapuSubTargetDiv" style="display:none;">
@@ -172,7 +176,7 @@
                 <option value="HorusMappingWidget">Yaapu - EdgeTX</option>
             </select>
         </div>
-        <div>
+        <div id="providerDiv">
             <div class="label">Provider</div>
             <select id="provider" onchange="syncMapOptions(); switchMapLayer(); saveSettings();">
                 <option value="OSM" selected>Standard Map (OSM) - Non High-Res</option>
@@ -180,13 +184,13 @@
                 <option value="GOOGLE">Google High-Res</option>
             </select>
         </div>
-        <div><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
+        <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
         <div id="googleWarning" class="google-warning">⚠️ Warning: Google might temporarily ban IPs after bulk downloads for 24 hours.</div>
         <div id="yaapuWarning" class="yaapu-warning"></div>
-        <hr style="width: 100%; border-color: #333; margin: 5px 0;">
-        <div><div class="label">Project Folder Name</div><input type="text" id="projectName" value="MyLocalField" maxlength="32" aria-label="Project Folder Name" oninput="if(this.value.length>32)this.value=this.value.slice(0,32);saveSettings();const status=document.getElementById('status');if(status&&status.innerText.startsWith('Error: Please enter a Project Folder Name.'))status.innerText='';"></div>
+        <hr id="tileSettingsHr" style="width: 100%; border-color: #333; margin: 5px 0;">
+        <div id="projectNameDiv"><div class="label">Project Folder Name</div><input type="text" id="projectName" value="MyLocalField" maxlength="32" aria-label="Project Folder Name" oninput="if(this.value.length>32)this.value=this.value.slice(0,32);saveSettings();const status=document.getElementById('status');if(status&&status.innerText.startsWith('Error: Please enter a Project Folder Name.'))status.innerText='';"></div>
         
-        <div class="zoom-row">
+        <div id="zoomRowDiv" class="zoom-row">
             <div>
                 <div class="label">Min Zoom</div>
                 <select id="minZoom" onchange="triggerUpdate(); saveSettings();"></select>
@@ -198,7 +202,7 @@
         </div>
         <div style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic;">Hint: Each extra zoom level ≈ 4× more tiles. Keep the area small or lower max zoom (when large area selected) to avoid long syncs and rate limits.</div>
 
-        <div class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
+        <div id="zoomLockDiv" class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
         <div id="syncDock">
             <button id="syncBtn" onclick="startSync()" aria-label="Sync to SD Card">⚡ Sync to SD Card</button>
             <div id="status" role="status" aria-live="polite">Search or zoom to your field...</div>
@@ -623,10 +627,21 @@
             if (yaapuSubTargetDiv) yaapuSubTargetDiv.style.display = (target === 'yaapu') ? 'block' : 'none';
 
             rebuildZoomSelectors(PROVIDER_MAX_ZOOM[provider] || 20);
+            updateTerrainMode();
         }
 
         /* SD card linking uses the File System Access API when the browser supports it. */
         let sdHandle = null;
+        let lastTargetCategory = 'radio';
+
+        function getTargetCategory() { return document.getElementById('targetWidget').value === 'terrain' ? 'fc' : 'radio'; }
+
+        function getSDButtonLabel(linked) {
+            const isFc = getTargetCategory() === 'fc';
+            if (linked) return isFc ? '✅ FC SD Card Linked' : '✅ SD Card Linked';
+            return isFc ? '📂 Link FC SD Card' : '📂 Link SD Card';
+        }
+
         async function linkSDCard() {
             if (!window.showDirectoryPicker) {
                 alert('Your browser does not support SD card access. Use ZIP download instead.');
@@ -635,13 +650,13 @@
             try {
                 sdHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 const btn = document.getElementById('linkSDBtn');
-                btn.innerText = "✅ SD Card Linked";
+                btn.innerText = getSDButtonLabel(true);
                 btn.classList.add('linked');
             } catch (err) {}
         }
 
         /* Reset the SD card UI if permission is lost or the directory becomes inaccessible. */
-        function resetSDButton() { sdHandle = null; const btn = document.getElementById('linkSDBtn'); btn.innerText = "📂 Link SD Card"; btn.classList.remove('linked'); }
+        function resetSDButton() { sdHandle = null; const btn = document.getElementById('linkSDBtn'); btn.innerText = getSDButtonLabel(false); btn.classList.remove('linked'); }
 
         /* Poll the directory handle so stale permissions are detected quickly. */
         setInterval(async () => {
@@ -662,7 +677,7 @@
         /* Right-click is repurposed to cancel measure/draw actions or clear the active area box. */
         mapContainer.addEventListener('contextmenu', e => {
             e.preventDefault(); if (isMeasuring) { toggleMeasure(); return; } 
-            if (drawnItems.getLayers().length > 0) { drawnItems.clearLayers(); if (labels.width) { map.removeLayer(labels.width); map.removeLayer(labels.height); labels = {width:null,height:null}; } document.getElementById('status').innerText = "Area removed."; drawControl._toolbars.draw._modes.rectangle.handler.enable(); return; } 
+            if (drawnItems.getLayers().length > 0) { drawnItems.clearLayers(); if (labels.width) { map.removeLayer(labels.width); map.removeLayer(labels.height); labels = {width:null,height:null}; } document.getElementById('status').innerText = "Area removed."; if (isTerrainMode()) updateTerrainGrid(); drawControl._toolbars.draw._modes.rectangle.handler.enable(); return; } 
             const handler = drawControl._toolbars.draw._modes.rectangle.handler; if (handler.enabled()) handler.disable();
         });
 
@@ -809,7 +824,7 @@
         }
 
         /* Refresh derived map UI whenever the area or zoom range changes. */
-        function triggerUpdate() { if(drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]); document.getElementById('zoom-display-map').innerText = `Zoom: ${map.getZoom()}`; }
+        function triggerUpdate() { if(drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]); if (isTerrainMode()) { updateTerrainGrid(); updateTerrainStatus(); } document.getElementById('zoom-display-map').innerText = `Zoom: ${map.getZoom()}`; }
         map.on(L.Draw.Event.CREATED, e => {
             // Remove error message when rectangle is drawn
             const status = document.getElementById('status');
@@ -820,6 +835,7 @@
             drawnItems.clearLayers();
             drawnItems.addLayer(e.layer);
             updateSideLabels(e.layer);
+            if (isTerrainMode()) { updateTerrainGrid(); updateTerrainStatus(); }
         });
         map.on('draw:editmove draw:editresize editdrag zoomend moveend', triggerUpdate);
         
@@ -1139,6 +1155,7 @@
                             mainConfirmBtn.onclick = handleConfirmClick;
                             mainConfirmBtn.style.display = 'block';
                         }
+            if (isTerrainMode()) { startTerrainSync(); return; }
             const layer = drawnItems.getLayers()[0];
             const status = document.getElementById('status');
             const projectNameInput = document.getElementById('projectName');
@@ -1214,10 +1231,14 @@
         }
 
         /* Hide the sync modal without changing any other map state. */
-        function closeSync() { document.getElementById('syncOverlay').style.display = 'none'; }
+        function closeSync() { document.getElementById('syncOverlay').style.display = 'none'; const tib = document.getElementById('terrainImportBtn'); if (tib) tib.style.display = 'none'; }
 
         /* Route the confirmation button to SD-card mode or ZIP fallback mode. */
         function handleConfirmClick() {
+            if (isTerrainMode()) {
+                startTerrainSync();
+                return;
+            }
             if (!sdHandle) {
                 document.getElementById('modalHeader').innerText = "No SD Card Linked";
                 document.getElementById('syncInfo').innerHTML = `<p style='text-align:center; padding:10px; font-size:14px; color:#ffeb3b;'>Continue by downloading a ZIP file to your browser's downloads folder</p>`;
@@ -1492,6 +1513,773 @@
                 img.src = url;
             });
         }
+
+        // ===== INAV TERRAIN (SRTM) MODE =====
+
+        let terrainGridLayer = null;
+
+        function isTerrainMode() {
+            return document.getElementById('targetWidget').value === 'terrain';
+        }
+
+        function getTerrainDegreeTiles(bounds) {
+            const tiles = [];
+            const latMin = Math.floor(bounds.getSouth());
+            const latMax = Math.floor(bounds.getNorth());
+            const lonMin = Math.floor(bounds.getWest());
+            const lonMax = Math.floor(bounds.getEast());
+            for (let lat = latMin; lat <= latMax; lat++) {
+                for (let lon = lonMin; lon <= lonMax; lon++) {
+                    tiles.push({ lat, lon });
+                }
+            }
+            return tiles;
+        }
+
+        function terrainDatFilename(lat, lon) {
+            const latPrefix = lat >= 0 ? 'N' : 'S';
+            const lonPrefix = lon >= 0 ? 'E' : 'W';
+            const latStr = String(Math.abs(lat)).padStart(2, '0');
+            const lonStr = String(Math.abs(lon)).padStart(3, '0');
+            return latPrefix + latStr + lonPrefix + lonStr + '.DAT';
+        }
+
+        function updateTerrainGrid() {
+            if (terrainGridLayer) {
+                map.removeLayer(terrainGridLayer);
+                terrainGridLayer = null;
+            }
+            if (!isTerrainMode()) return;
+
+            terrainGridLayer = L.layerGroup();
+            const mapBounds = map.getBounds();
+            const latMin = Math.floor(mapBounds.getSouth()) - 1;
+            const latMax = Math.ceil(mapBounds.getNorth()) + 1;
+            const lonMin = Math.floor(mapBounds.getWest()) - 1;
+            const lonMax = Math.ceil(mapBounds.getEast()) + 1;
+
+            for (let lat = latMin; lat <= latMax; lat++) {
+                L.polyline([[lat, lonMin - 1], [lat, lonMax + 1]], {
+                    color: '#ff6600', weight: 1, opacity: 0.5, dashArray: '6,4', interactive: false
+                }).addTo(terrainGridLayer);
+            }
+            for (let lon = lonMin; lon <= lonMax; lon++) {
+                L.polyline([[latMin - 1, lon], [latMax + 1, lon]], {
+                    color: '#ff6600', weight: 1, opacity: 0.5, dashArray: '6,4', interactive: false
+                }).addTo(terrainGridLayer);
+            }
+
+            // Highlight selected tile borders with solid thick lines
+            const selLayer = drawnItems.getLayers()[0];
+            const selLats = new Set();
+            const selLons = new Set();
+            if (selLayer) {
+                const sb = selLayer.getBounds();
+                const sLatMin = Math.floor(sb.getSouth());
+                const sLatMax = Math.floor(sb.getNorth());
+                const sLonMin = Math.floor(sb.getWest());
+                const sLonMax = Math.floor(sb.getEast());
+                for (let lat = sLatMin; lat <= sLatMax + 1; lat++) selLats.add(lat);
+                for (let lon = sLonMin; lon <= sLonMax + 1; lon++) selLons.add(lon);
+                const solidStyle = { color: '#ff6600', weight: 2.5, opacity: 0.9, interactive: false };
+                selLats.forEach(function(lat) {
+                    L.polyline([[lat, sLonMin], [lat, sLonMax + 1]], solidStyle).addTo(terrainGridLayer);
+                });
+                selLons.forEach(function(lon) {
+                    L.polyline([[sLatMin, lon], [sLatMax + 1, lon]], solidStyle).addTo(terrainGridLayer);
+                });
+            }
+
+            var zoom = map.getZoom();
+            if (zoom >= 6) {
+                var lbl = zoom >= 8 ? {fs:11,pad:'2px 5px',w:80,h:16,bg:0.8} :
+                          zoom >= 7 ? {fs:10,pad:'2px 4px',w:74,h:14,bg:0.7} :
+                                      {fs:9,pad:'1px 3px',w:64,h:13,bg:0.55};
+                for (let lat = latMin; lat < latMax; lat++) {
+                    for (let lon = lonMin; lon < lonMax; lon++) {
+                        if (lat >= -90 && lat < 90 && lon >= -180 && lon < 180) {
+                            L.marker([lat + 0.5, lon + 0.5], {
+                                icon: L.divIcon({
+                                    className: 'terrain-grid-label',
+                                    html: '<span style="font-size:'+lbl.fs+'px;padding:'+lbl.pad+';background:rgba(255,102,0,'+lbl.bg+')">' + terrainDatFilename(lat, lon) + '</span>',
+                                    iconSize: [lbl.w, lbl.h],
+                                    iconAnchor: [lbl.w/2, lbl.h/2]
+                                }),
+                                interactive: false
+                            }).addTo(terrainGridLayer);
+                        }
+                    }
+                }
+            }
+
+            terrainGridLayer.addTo(map);
+        }
+
+        function updateTerrainStatus() {
+            if (!isTerrainMode()) return;
+            const layer = drawnItems.getLayers()[0];
+            const status = document.getElementById('status');
+            if (!layer) {
+                status.innerHTML = '<span style="color:#ffeb3b">Draw a rectangle to select terrain area...</span>';
+                return;
+            }
+            const bounds = layer.getBounds();
+            const latlngs = layer.getLatLngs()[0];
+            const area = L.GeometryUtil.geodesicArea(latlngs);
+            const tiles = getTerrainDegreeTiles(bounds);
+            const estSizeMB = tiles.reduce(function(s, t) { return s + estimateDatSizeMB(t.lat); }, 0).toFixed(0);
+            const fileList = tiles.map(t => terrainDatFilename(t.lat, t.lon));
+            status.innerHTML =
+                '<span style="color:#ffeb3b">Area: ' + formatArea(area) + '</span><br>' +
+                '<span style="color:#ffeb3b">Terrain Files: ' + tiles.length + ' .DAT file(s)</span><br>' +
+                '<span style="color:#87b025">Est. Size: ~' + estSizeMB + ' MB</span><br>' +
+                '<span style="color:#aaa; font-size:11px">' + fileList.join(', ') + '</span>';
+        }
+
+        var preTerrainZoom = null;
+
+        function updateTerrainMode() {
+            const isTerrain = isTerrainMode();
+            const currentCategory = getTargetCategory();
+            if (sdHandle && currentCategory !== lastTargetCategory) {
+                resetSDButton();
+                const deviceName = currentCategory === 'fc' ? 'FC' : 'Radio';
+                const status = document.getElementById('status');
+                if (status) status.innerHTML = '<span style="color:#ff9800">SD card unlinked — switched to ' + deviceName + ' target</span>';
+            }
+            lastTargetCategory = currentCategory;
+            document.getElementById('linkSDBtn').innerText = getSDButtonLabel(!!sdHandle);
+
+            var srtmAttr = 'Elevation data: <a href="https://www.usgs.gov/centers/eros/science/usgs-eros-archive-digital-elevation-shuttle-radar-topography-mission-srtm-1">NASA SRTM</a>';
+            if (isTerrain) {
+                map.attributionControl.addAttribution(srtmAttr);
+            } else {
+                map.attributionControl.removeAttribution(srtmAttr);
+            }
+
+            if (isTerrain && preTerrainZoom === null) {
+                preTerrainZoom = map.getZoom();
+                map.setZoom(8);
+            } else if (!isTerrain && preTerrainZoom !== null) {
+                map.setZoom(preTerrainZoom);
+                preTerrainZoom = null;
+            }
+
+            ['providerDiv', 'mapTypeDiv', 'googleWarning', 'yaapuWarning',
+             'projectNameDiv', 'zoomRowDiv', 'zoomLockDiv', 'tileSettingsHr'].forEach(function(id) {
+                const el = document.getElementById(id);
+                if (el) el.style.display = isTerrain ? 'none' : '';
+            });
+            if (isTerrain) {
+                const yst = document.getElementById('yaapuSubTargetDiv');
+                if (yst) yst.style.display = 'none';
+            }
+            updateTerrainGrid();
+            if (drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]);
+            if (isTerrain) updateTerrainStatus();
+        }
+
+        // ===== SRTM HGT → DAT CONVERSION ENGINE =====
+        const SRTM_BASE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/skadi';
+        const SRTM_GRID = 3601;
+        const TERRAIN_SPACING = 30;
+        const TERRAIN_BLK_SIZE_X = 28;
+        const TERRAIN_BLK_SIZE_Y = 32;
+        const TERRAIN_BLK_SPACE_X = 24;
+        const TERRAIN_BLK_SPACE_Y = 28;
+        const TERRAIN_IO_BLOCK = 2048;
+        const TERRAIN_IO_DATA = 1821;
+        const LOCATION_SCALING_FACTOR_F32 = Math.fround(0.011131884502145034);
+        const LOCATION_SCALING_FACTOR_INV_F32 = Math.fround(89.83204953368922);
+
+        function crc16xmodem(data, len) {
+            let crc = 0;
+            for (let i = 0; i < len; i++) {
+                crc ^= data[i] << 8;
+                for (let j = 0; j < 8; j++) {
+                    crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+                    crc &= 0xFFFF;
+                }
+            }
+            return crc;
+        }
+
+        function lonScale(latDeg) {
+            return Math.max(Math.fround(Math.cos(Math.fround(latDeg * Math.PI / 180))), 0.01);
+        }
+
+        function addOffset(latE7, lonE7, ofsNorth, ofsEast) {
+            var dlat = Math.trunc(ofsNorth * LOCATION_SCALING_FACTOR_INV_F32);
+            var ls = lonScale((latE7 + dlat * 0.5) * 1e-7);
+            var dlng = Math.trunc((ofsEast * LOCATION_SCALING_FACTOR_INV_F32) / ls);
+            return [latE7 + dlat, lonE7 + dlng];
+        }
+
+        function eastBlocks(latE7, lonE7) {
+            var r = addOffset(latE7, lonE7 + 10000000, 0, 2 * TERRAIN_SPACING * TERRAIN_BLK_SIZE_Y);
+            var dlng = r[1] - lonE7;
+            var eastDist = dlng * LOCATION_SCALING_FACTOR_F32 * lonScale((latE7 + r[0]) * 0.5 * 1e-7);
+            return Math.floor(eastDist / (TERRAIN_SPACING * TERRAIN_BLK_SPACE_Y));
+        }
+
+        function hgtElevation(hgtView, degLat, degLon, lat, lon) {
+            var fracLat = lat - degLat;
+            var fracLon = lon - degLon;
+            var rowF = (1 - fracLat) * 3600;
+            var colF = fracLon * 3600;
+            var r0 = Math.max(0, Math.min(3599, Math.floor(rowF)));
+            var c0 = Math.max(0, Math.min(3599, Math.floor(colF)));
+            var r1 = Math.min(3600, r0 + 1);
+            var c1 = Math.min(3600, c0 + 1);
+            var dr = Math.max(0, Math.min(1, rowF - r0));
+            var dc = Math.max(0, Math.min(1, colF - c0));
+            function getH(r, c) {
+                var v = hgtView.getInt16((r * SRTM_GRID + c) * 2, false);
+                return v === -32768 ? 0 : v;
+            }
+            return Math.round(
+                getH(r0, c0) * (1 - dr) * (1 - dc) +
+                getH(r0, c1) * (1 - dr) * dc +
+                getH(r1, c0) * dr * (1 - dc) +
+                getH(r1, c1) * dr * dc
+            );
+        }
+
+        function srtmTileName(lat, lon) {
+            var lp = lat >= 0 ? 'N' : 'S';
+            var lnp = lon >= 0 ? 'E' : 'W';
+            return lp + String(Math.abs(lat)).padStart(2, '0') + lnp + String(Math.abs(lon)).padStart(3, '0');
+        }
+
+        function srtmUrl(lat, lon) {
+            var name = srtmTileName(lat, lon);
+            return SRTM_BASE_URL + '/' + name.substring(0, 3) + '/' + name + '.hgt.gz';
+        }
+
+        function estimateDatSizeMB(lat) {
+            var baseLat = Math.floor(Math.abs(lat)) * (lat >= 0 ? 1 : -1) * 10000000;
+            var baseLon = 0;
+            var numX = 0;
+            while (addOffset(baseLat, baseLon, numX * TERRAIN_BLK_SPACE_X * TERRAIN_SPACING, 0)[0] * 1e-7 - baseLat * 1e-7 < 1.0) numX++;
+            var numY = eastBlocks(baseLat, baseLon);
+            return (numX * numY * TERRAIN_IO_BLOCK) / 1048576;
+        }
+
+        function packTerrainBlock(latE7, lonE7, spacing, heights, idxX, idxY, lonDeg, latDeg) {
+            var buf = new ArrayBuffer(TERRAIN_IO_BLOCK);
+            var v = new DataView(buf);
+            var u8 = new Uint8Array(buf);
+            v.setBigUint64(0, 0x00FFFFFFFFFFFFFFn, true);
+            v.setInt32(8, latE7, true);
+            v.setInt32(12, lonE7, true);
+            v.setUint16(16, 0, true);
+            v.setUint16(18, 1, true);
+            v.setUint16(20, spacing, true);
+            var off = 22;
+            for (var x = 0; x < TERRAIN_BLK_SIZE_X; x++) {
+                for (var y = 0; y < TERRAIN_BLK_SIZE_Y; y++) {
+                    v.setInt16(off, heights[x * TERRAIN_BLK_SIZE_Y + y], true);
+                    off += 2;
+                }
+            }
+            v.setUint16(1814, idxX, true);
+            v.setUint16(1816, idxY, true);
+            v.setInt16(1818, lonDeg, true);
+            v.setInt8(1820, latDeg);
+            v.setUint8(1821, 1);
+            var crc = crc16xmodem(u8, TERRAIN_IO_DATA);
+            v.setUint16(16, crc, true);
+            return u8;
+        }
+
+        async function createDatFromHgt(degLat, degLon, hgtData, progressCb) {
+            var hgtBuf = (hgtData.buffer && hgtData.buffer.byteLength === hgtData.length)
+                ? hgtData.buffer : hgtData.buffer.slice(hgtData.byteOffset, hgtData.byteOffset + hgtData.byteLength);
+            var hgtView = new DataView(hgtBuf);
+            var baseLat = degLat * 10000000;
+            var baseLon = degLon * 10000000;
+            var numX = 0;
+            while (addOffset(baseLat, baseLon, numX * TERRAIN_BLK_SPACE_X * TERRAIN_SPACING, 0)[0] * 1e-7 - degLat < 1.0) numX++;
+            var numY = eastBlocks(baseLat, baseLon);
+            var totalBlocks = numX * numY;
+            var output = new Uint8Array(totalBlocks * TERRAIN_IO_BLOCK);
+            var blockNum = 0;
+            for (var ix = 0; ix < numX; ix++) {
+                for (var iy = 0; iy < numY; iy++) {
+                    var blk = addOffset(baseLat, baseLon,
+                        ix * TERRAIN_BLK_SPACE_X * TERRAIN_SPACING,
+                        iy * TERRAIN_BLK_SPACE_Y * TERRAIN_SPACING);
+                    var latE7 = blk[0];
+                    var lonE7 = blk[1];
+                    var heights = new Int16Array(TERRAIN_BLK_SIZE_X * TERRAIN_BLK_SIZE_Y);
+                    for (var gx = 0; gx < TERRAIN_BLK_SIZE_X; gx++) {
+                        for (var gy = 0; gy < TERRAIN_BLK_SIZE_Y; gy++) {
+                            var pt = addOffset(latE7, lonE7, gx * TERRAIN_SPACING, gy * TERRAIN_SPACING);
+                            heights[gx * TERRAIN_BLK_SIZE_Y + gy] = hgtElevation(hgtView, degLat, degLon, pt[0] * 1e-7, pt[1] * 1e-7);
+                        }
+                    }
+                    var block = packTerrainBlock(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                    output.set(block, blockNum * TERRAIN_IO_BLOCK);
+                    blockNum++;
+                    if (blockNum % 200 === 0) {
+                        if (progressCb) progressCb(blockNum, totalBlocks);
+                        await new Promise(function(r) { setTimeout(r, 0); });
+                    }
+                }
+            }
+            if (progressCb) progressCb(totalBlocks, totalBlocks);
+            return output;
+        }
+
+        async function decompressGz(arrayBuffer) {
+            if (typeof DecompressionStream !== 'undefined') {
+                var ds = new DecompressionStream('gzip');
+                var blob = new Blob([arrayBuffer]);
+                var decompressed = blob.stream().pipeThrough(ds);
+                var reader = decompressed.getReader();
+                var chunks = [];
+                while (true) {
+                    var result = await reader.read();
+                    if (result.done) break;
+                    chunks.push(result.value);
+                }
+                var totalLen = chunks.reduce(function(s, c) { return s + c.length; }, 0);
+                var data = new Uint8Array(totalLen);
+                var off = 0;
+                for (var i = 0; i < chunks.length; i++) { data.set(chunks[i], off); off += chunks[i].length; }
+                return data;
+            }
+            throw new Error('Browser does not support gzip decompression');
+        }
+
+        async function fetchSrtmTile(lat, lon, statusCb) {
+            var url = srtmUrl(lat, lon);
+            var name = srtmTileName(lat, lon);
+            try {
+                if (statusCb) statusCb('connecting');
+                var resp = await fetch(url);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (statusCb) statusCb('downloading');
+                var gz = await resp.arrayBuffer();
+                if (statusCb) statusCb('decompressing');
+                return await decompressGz(gz);
+            } catch (e) {
+                appendLog('Fetch failed for ' + name + '.hgt.gz: ' + e.message, true);
+                throw new Error('FETCH_FAILED');
+            }
+        }
+
+        async function writeTerrainToSD(datFiles, startTime) {
+            try {
+                var perm = await sdHandle.queryPermission({ mode: 'readwrite' });
+                if (perm !== 'granted') throw new Error('lost');
+            } catch (e) {
+                resetSDButton();
+                alert('SD Card connection lost. Please re-link.');
+                closeSync();
+                return;
+            }
+            try { await sdHandle.removeEntry('FREESPAC.E'); appendLog('Deleted FREESPAC.E'); }
+            catch (e) { /* OK */ }
+            var forceOverwrite = document.getElementById('overwriteToggle').checked;
+            appendLog('Writing ' + datFiles.length + ' file(s) to FC SD card...' + (forceOverwrite ? ' (overwrite)' : ' (skip existing)'));
+            var total = datFiles.length, processed = 0, failedCount = 0, skipped = 0;
+            for (var i = 0; i < datFiles.length; i++) {
+                if (syncAborted) break;
+                var df = datFiles[i];
+                try {
+                    if (!forceOverwrite) {
+                        try {
+                            await sdHandle.getFileHandle(df.name);
+                            skipped++;
+                            appendLog('Skipped (exists): ' + df.name);
+                            processed++;
+                            updateSyncProgress(processed, total, startTime, failedCount);
+                            continue;
+                        } catch (e) { /* file doesn't exist, proceed to write */ }
+                    }
+                    var fh = await sdHandle.getFileHandle(df.name, { create: true });
+                    var wr = await fh.createWritable();
+                    await wr.write(df.data);
+                    await wr.close();
+                    appendLog('Wrote ' + df.name + ' (' + (df.data.length / 1048576).toFixed(1) + ' MB)');
+                } catch (e) {
+                    failedCount++;
+                    appendLog('Failed: ' + df.name + ': ' + e.message, true);
+                }
+                processed++;
+                updateSyncProgress(processed, total, startTime, failedCount);
+            }
+            if (syncAborted) return;
+            showTerrainComplete(total, failedCount, skipped);
+        }
+
+        async function downloadTerrainZip(datFiles) {
+            appendLog('Creating ZIP archive...');
+            document.getElementById('downloadStatus').innerText = 'Creating ZIP...';
+            var zip = new JSZip();
+            for (var i = 0; i < datFiles.length; i++) {
+                zip.file(datFiles[i].name, datFiles[i].data);
+            }
+            var blob = await zip.generateAsync({ type: 'blob' }, function(meta) {
+                document.getElementById('progressFill').style.width = meta.percent.toFixed(0) + '%';
+            });
+            saveAs(blob, 'INAV_Terrain_SRTM.zip');
+            appendLog('ZIP downloaded: INAV_Terrain_SRTM.zip');
+            showTerrainComplete(datFiles.length, 0);
+        }
+
+        function showTerrainComplete(total, failedCount, skipped) {
+            skipped = skipped || 0;
+            if (failedCount > 0) {
+                document.getElementById('downloadStatus').innerText = 'Done with ' + failedCount + ' error(s).' + (skipped > 0 ? ' ' + skipped + ' skipped (already existed).' : '');
+            } else {
+                var written = total - skipped;
+                var summary = written + ' .DAT file(s) written';
+                if (skipped > 0) summary += ', ' + skipped + ' skipped (already existed)';
+                document.getElementById('modalHeader').innerText = 'Terrain Generation Complete!';
+                document.getElementById('syncInfo').innerHTML =
+                    '<div class="sync-info-row"><span>Files:</span><span>' + summary + '</span></div>' +
+                    '<div style="margin:18px 0; text-align:center; color:#87b025; font-size:16px; font-weight:bold;">All terrain files generated!</div>' +
+                    '<div style="text-align:center; color:#aaa; font-size:12px;">Enable terrain in INAV CLI:<br><code style="color:#ffeb3b;">set terrain_enabled = ON</code> then <code style="color:#ffeb3b;">save</code></div>';
+                document.getElementById('progressSection').style.display = 'none';
+            }
+            document.getElementById('modalActions').style.display = 'flex';
+            document.getElementById('mainConfirmBtn').style.display = 'none';
+            var closeBtnEl = document.getElementById('modalActions').querySelector('.btn-cancel');
+            if (closeBtnEl) { closeBtnEl.innerText = 'Close'; closeBtnEl.className = 'btn-confirm'; closeBtnEl.onclick = closeSync; closeBtnEl.style.display = 'block'; }
+            var impBtn = document.getElementById('terrainImportBtn');
+            if (impBtn) impBtn.style.display = 'none';
+        }
+
+        async function terrainGenerateAndSync(tiles) {
+            syncAborted = false;
+            clearLog();
+            document.getElementById('modalHeader').innerText = 'Generating Terrain Files...';
+            document.getElementById('modalActions').style.display = 'none';
+            document.getElementById('overwriteSection').style.display = 'none';
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('downloadStatus').innerText = 'Starting...';
+            var impBtn = document.getElementById('terrainImportBtn');
+            if (impBtn) impBtn.style.display = 'none';
+            var startTime = Date.now();
+            var totalTiles = tiles.length;
+            var completed = 0;
+            var datFiles = [];
+            for (var ti = 0; ti < tiles.length; ti++) {
+                if (syncAborted) break;
+                var tile = tiles[ti];
+                var name = srtmTileName(tile.lat, tile.lon);
+                appendLog('Fetching ' + name + '.hgt.gz...');
+                var prefix = 'Tile ' + (completed + 1) + '/' + totalTiles + ': ';
+                document.getElementById('downloadStatus').innerText = prefix + '⬇️ Connecting to SRTM server...';
+                var hgtData;
+                try {
+                    hgtData = await fetchSrtmTile(tile.lat, tile.lon, function(stage) {
+                        var msg = stage === 'connecting' ? '⬇️ Connecting to SRTM server...'
+                                : stage === 'downloading' ? '⬇️ Downloading ' + name + '.hgt.gz...'
+                                : '📦 Decompressing ' + name + '...';
+                        document.getElementById('downloadStatus').innerText = prefix + msg;
+                    });
+                    document.getElementById('downloadStatus').innerText = prefix + '✅ Downloaded ' + name + ' (' + (hgtData.length / 1048576).toFixed(1) + ' MB)';
+                    appendLog('Downloaded ' + name + '.hgt (' + (hgtData.length / 1048576).toFixed(1) + ' MB)');
+                } catch (e) {
+                    appendLog('Auto-fetch failed — use "Import HGT Files" to select local .hgt.gz files.', true);
+                    document.getElementById('downloadStatus').innerText = 'Fetch blocked. Use Import button below.';
+                    document.getElementById('modalActions').style.display = 'flex';
+                    document.getElementById('syncInfo').innerHTML =
+                        '<div style="color:#aaa; font-size:13px; line-height:1.6; margin:8px 0;">' +
+                        'Direct download failed (CORS restriction from file:// origin).<br><br>' +
+                        '<b style="color:#ff9800;">Option 1:</b> Click <b style="color:#87b025;">Import HGT Files</b> and select .hgt.gz files ' +
+                        'downloaded from:<br><a href="' + srtmUrl(tile.lat, tile.lon) + '" target="_blank" style="color:#87b025; word-break:break-all; font-size:11px;">' + srtmUrl(tile.lat, tile.lon) + '</a><br><br>' +
+                        '<b style="color:#ff9800;">Option 2:</b> Serve this app from a local web server (no CORS issue).' +
+                        '</div>';
+                    var mainBtn = document.getElementById('mainConfirmBtn');
+                    mainBtn.innerText = '\ud83d\udce5 Import HGT Files';
+                    mainBtn.style.display = 'block';
+                    mainBtn.onclick = function() { importHgtFiles(tiles); };
+                    var cancelBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
+                    if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
+                    return;
+                }
+                document.getElementById('downloadStatus').innerText = prefix + '⚙️ Converting ' + name + ' to .DAT...';
+                try {
+                    var capCompleted = completed;
+                    var capPrefix = prefix;
+                    var capName = name;
+                    var datData = await createDatFromHgt(tile.lat, tile.lon, hgtData, function(done, total) {
+                        var pct = ((capCompleted + done / total) / totalTiles * 100).toFixed(0);
+                        document.getElementById('progressFill').style.width = pct + '%';
+                        document.getElementById('downloadStatus').innerText = capPrefix + '⚙️ Converting ' + capName + ' (' + Math.round(done / total * 100) + '%)';
+                    });
+                    datFiles.push({ name: terrainDatFilename(tile.lat, tile.lon), data: datData });
+                    document.getElementById('downloadStatus').innerText = prefix + '✅ ' + terrainDatFilename(tile.lat, tile.lon) + ' (' + (datData.length / 1048576).toFixed(1) + ' MB)';
+                    appendLog('Generated ' + terrainDatFilename(tile.lat, tile.lon) + ' (' + (datData.length / 1048576).toFixed(1) + ' MB)');
+                } catch (e) {
+                    appendLog('Conversion failed for ' + name + ': ' + e.message, true);
+                }
+                completed++;
+                hgtData = null;
+            }
+            if (syncAborted || datFiles.length === 0) {
+                if (datFiles.length === 0) {
+                    document.getElementById('downloadStatus').innerText = 'No files generated.';
+                    document.getElementById('modalActions').style.display = 'flex';
+                    document.getElementById('mainConfirmBtn').style.display = 'none';
+                    var cb = document.getElementById('modalActions').querySelector('.btn-cancel');
+                    if (cb) { cb.innerText = 'Close'; cb.className = 'btn-confirm'; cb.onclick = closeSync; cb.style.display = 'block'; }
+                }
+                return;
+            }
+            if (sdHandle) {
+                try {
+                    var p = await sdHandle.queryPermission({ mode: 'readwrite' });
+                    if (p !== 'granted') throw new Error('lost');
+                } catch (e) {
+                    resetSDButton();
+                    sdHandle = null;
+                }
+            }
+            if (sdHandle) {
+                document.getElementById('downloadStatus').innerText = 'Generation complete! Syncing to SD card...';
+                await writeTerrainToSD(datFiles, startTime);
+            } else {
+                document.getElementById('downloadStatus').innerText = 'Generation complete!';
+                document.getElementById('modalActions').style.display = 'flex';
+                var mainBtn2 = document.getElementById('mainConfirmBtn');
+                mainBtn2.innerText = '\ud83d\udcbe Download ZIP';
+                mainBtn2.className = 'btn-confirm';
+                mainBtn2.style.display = 'block';
+                mainBtn2.onclick = function() { downloadTerrainZip(datFiles); };
+                var linkBtn2 = document.getElementById('terrainImportBtn');
+                if (!linkBtn2) {
+                    linkBtn2 = document.createElement('button');
+                    linkBtn2.id = 'terrainImportBtn';
+                    linkBtn2.style.cssText = 'flex:1; padding:12px; cursor:pointer; border-radius:4px; font-weight:bold; border:none; background:#ff9800; color:#000;';
+                    document.getElementById('modalActions').appendChild(linkBtn2);
+                }
+                linkBtn2.innerText = '\ud83d\udcc2 Link SD & Write';
+                linkBtn2.style.display = 'block';
+                linkBtn2.onclick = async function() {
+                    try {
+                        sdHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                        var btn = document.getElementById('linkSDBtn');
+                        btn.innerText = getSDButtonLabel(true);
+                        btn.classList.add('linked');
+                        await writeTerrainToSD(datFiles, Date.now());
+                    } catch (e) { appendLog('SD card link cancelled.'); }
+                };
+                var cancelBtn2 = document.getElementById('modalActions').querySelector('.btn-cancel');
+                if (cancelBtn2) { cancelBtn2.innerText = 'Close'; cancelBtn2.onclick = closeSync; cancelBtn2.style.display = 'block'; }
+            }
+        }
+
+        async function importHgtFiles(tiles) {
+            var fileHandles;
+            try {
+                fileHandles = await window.showOpenFilePicker({
+                    multiple: true,
+                    excludeAcceptAllOption: false,
+                    types: [
+                        { description: 'SRTM HGT files (.hgt, .hgt.gz)', accept: { 'application/octet-stream': ['.hgt'] } },
+                        { description: 'Gzip compressed (.gz)', accept: { 'application/gzip': ['.gz'] } },
+                        { description: 'DAT terrain files (.DAT)', accept: { 'application/octet-stream': ['.DAT', '.dat'] } },
+                        { description: 'ZIP archive (.zip)', accept: { 'application/zip': ['.zip'] } }
+                    ]
+                });
+            } catch (e) {
+                appendLog('File picker cancelled.');
+                return;
+            }
+            if (!fileHandles || fileHandles.length === 0) return;
+            syncAborted = false;
+            document.getElementById('modalHeader').innerText = 'Processing Terrain Files...';
+            document.getElementById('modalActions').style.display = 'none';
+            document.getElementById('overwriteSection').style.display = 'none';
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('downloadStatus').innerText = 'Reading files...';
+            var impBtn = document.getElementById('terrainImportBtn');
+            if (impBtn) impBtn.style.display = 'none';
+            clearLog();
+            var datFiles = [];
+            var hgtFiles = [];
+            for (var fi = 0; fi < fileHandles.length; fi++) {
+                var file = await fileHandles[fi].getFile();
+                var nameLower = file.name.toLowerCase();
+                try {
+                    if (nameLower.endsWith('.zip')) {
+                        appendLog('Extracting ZIP: ' + file.name);
+                        var zipData = await file.arrayBuffer();
+                        var jszip = await JSZip.loadAsync(zipData);
+                        for (var zname of Object.keys(jszip.files)) {
+                            var entry = jszip.files[zname];
+                            if (entry.dir) continue;
+                            var baseName = zname.split('/').pop();
+                            var upper = baseName.toUpperCase();
+                            if (upper.endsWith('.HGT.GZ')) {
+                                var gzd = await entry.async('arraybuffer');
+                                var dec = await decompressGz(gzd);
+                                hgtFiles.push({ name: baseName.replace(/\.gz$/i, ''), data: dec });
+                                appendLog('  Decompressed: ' + baseName);
+                            } else if (upper.endsWith('.HGT')) {
+                                hgtFiles.push({ name: baseName, data: await entry.async('uint8array') });
+                                appendLog('  Extracted HGT: ' + baseName);
+                            } else if (upper.endsWith('.DAT')) {
+                                datFiles.push({ name: baseName, data: await entry.async('uint8array') });
+                                appendLog('  Extracted DAT: ' + baseName);
+                            }
+                        }
+                    } else if (nameLower.endsWith('.hgt.gz')) {
+                        appendLog('Decompressing: ' + file.name);
+                        var gzBuf = await file.arrayBuffer();
+                        var hgtDec = await decompressGz(gzBuf);
+                        hgtFiles.push({ name: file.name.replace(/\.gz$/i, ''), data: hgtDec });
+                        appendLog('Decompressed: ' + file.name + ' (' + (hgtDec.length / 1048576).toFixed(1) + ' MB)');
+                    } else if (nameLower.endsWith('.hgt')) {
+                        var hgtRaw = new Uint8Array(await file.arrayBuffer());
+                        hgtFiles.push({ name: file.name, data: hgtRaw });
+                        appendLog('Read HGT: ' + file.name);
+                    } else if (nameLower.endsWith('.dat')) {
+                        datFiles.push({ name: file.name, data: new Uint8Array(await file.arrayBuffer()) });
+                        appendLog('Read DAT: ' + file.name);
+                    } else {
+                        appendLog('Skipped: ' + file.name, true);
+                    }
+                } catch (e) {
+                    appendLog('Error reading ' + file.name + ': ' + e.message, true);
+                }
+            }
+            if (hgtFiles.length > 0) {
+                appendLog('Converting ' + hgtFiles.length + ' HGT file(s) to .DAT...');
+                for (var hi = 0; hi < hgtFiles.length; hi++) {
+                    if (syncAborted) break;
+                    var hf = hgtFiles[hi];
+                    var match = hf.name.match(/([NS])(\d{2})([EW])(\d{3})/i);
+                    if (!match) { appendLog('Cannot parse coords from: ' + hf.name, true); continue; }
+                    var hLat = (match[1].toUpperCase() === 'N' ? 1 : -1) * parseInt(match[2]);
+                    var hLon = (match[3].toUpperCase() === 'E' ? 1 : -1) * parseInt(match[4]);
+                    var hgtArr = (hf.data instanceof Uint8Array) ? hf.data : new Uint8Array(hf.data);
+                    if (hgtArr.length !== SRTM_GRID * SRTM_GRID * 2) {
+                        appendLog('Invalid HGT size for ' + hf.name + ': expected ' + (SRTM_GRID * SRTM_GRID * 2) + ', got ' + hgtArr.length, true);
+                        continue;
+                    }
+                    document.getElementById('downloadStatus').innerText = 'Converting ' + hf.name + '...';
+                    try {
+                        var capHi = hi;
+                        var dat = await createDatFromHgt(hLat, hLon, hgtArr, function(done, total) {
+                            document.getElementById('progressFill').style.width = ((done / total) * 100).toFixed(0) + '%';
+                        });
+                        datFiles.push({ name: terrainDatFilename(hLat, hLon), data: dat });
+                        appendLog('Converted: ' + terrainDatFilename(hLat, hLon) + ' (' + (dat.length / 1048576).toFixed(1) + ' MB)');
+                    } catch (e) {
+                        appendLog('Conversion failed: ' + hf.name + ': ' + e.message, true);
+                    }
+                }
+            }
+            if (datFiles.length === 0) {
+                document.getElementById('downloadStatus').innerText = 'No .DAT files generated.';
+                document.getElementById('modalActions').style.display = 'flex';
+                document.getElementById('mainConfirmBtn').style.display = 'none';
+                var cBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
+                if (cBtn) { cBtn.innerText = 'Close'; cBtn.className = 'btn-confirm'; cBtn.onclick = closeSync; cBtn.style.display = 'block'; }
+                return;
+            }
+            var startTime = Date.now();
+            if (sdHandle) {
+                try {
+                    var p2 = await sdHandle.queryPermission({ mode: 'readwrite' });
+                    if (p2 !== 'granted') throw new Error('lost');
+                } catch (e) { resetSDButton(); sdHandle = null; }
+            }
+            if (sdHandle) {
+                await writeTerrainToSD(datFiles, startTime);
+            } else {
+                document.getElementById('downloadStatus').innerText = 'Processing complete!';
+                document.getElementById('modalActions').style.display = 'flex';
+                var mainBtn3 = document.getElementById('mainConfirmBtn');
+                mainBtn3.innerText = '\ud83d\udcbe Download ZIP';
+                mainBtn3.className = 'btn-confirm';
+                mainBtn3.style.display = 'block';
+                mainBtn3.onclick = function() { downloadTerrainZip(datFiles); };
+                var linkBtn3 = document.getElementById('terrainImportBtn');
+                if (!linkBtn3) {
+                    linkBtn3 = document.createElement('button');
+                    linkBtn3.id = 'terrainImportBtn';
+                    linkBtn3.style.cssText = 'flex:1; padding:12px; cursor:pointer; border-radius:4px; font-weight:bold; border:none; background:#ff9800; color:#000;';
+                    document.getElementById('modalActions').appendChild(linkBtn3);
+                }
+                linkBtn3.innerText = '\ud83d\udcc2 Link SD & Write';
+                linkBtn3.style.display = 'block';
+                linkBtn3.onclick = async function() {
+                    try {
+                        sdHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                        var btn = document.getElementById('linkSDBtn');
+                        btn.innerText = getSDButtonLabel(true);
+                        btn.classList.add('linked');
+                        await writeTerrainToSD(datFiles, Date.now());
+                    } catch (e) { appendLog('SD card link cancelled.'); }
+                };
+                var cancelBtn3 = document.getElementById('modalActions').querySelector('.btn-cancel');
+                if (cancelBtn3) { cancelBtn3.innerText = 'Close'; cancelBtn3.onclick = closeSync; cancelBtn3.style.display = 'block'; }
+            }
+        }
+
+        function startTerrainSync() {
+            var layer = drawnItems.getLayers()[0];
+            var status = document.getElementById('status');
+            if (!layer) {
+                if (status) { status.textContent = 'Error: Please draw a rectangle to select terrain area.'; status.style.color = '#ff5252'; }
+                if (drawControl._toolbars && drawControl._toolbars.draw && drawControl._toolbars.draw._modes &&
+                    drawControl._toolbars.draw._modes.rectangle && drawControl._toolbars.draw._modes.rectangle.handler) {
+                    drawControl._toolbars.draw._modes.rectangle.handler.enable();
+                }
+                return;
+            }
+            if (status && status.style.color === 'rgb(255, 82, 82)') status.style.color = '';
+            if (status && status.innerText.startsWith('Error:')) status.innerText = '';
+            syncAborted = false;
+            var bounds = layer.getBounds();
+            var tiles = getTerrainDegreeTiles(bounds);
+            var fileList = tiles.map(function(t) { return terrainDatFilename(t.lat, t.lon); });
+            var totalSizeMB = tiles.reduce(function(s, t) { return s + estimateDatSizeMB(t.lat); }, 0).toFixed(0);
+            var hgtSizeMB = (tiles.length * 13).toFixed(0);
+
+            document.getElementById('modalHeader').innerText = 'INAV Terrain Generator';
+            document.getElementById('overwriteSection').style.display = sdHandle ? 'flex' : 'none';
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('modalActions').style.display = 'flex';
+            document.getElementById('syncInfo').innerHTML =
+                '<div class="sync-info-row"><span>Target:</span><span>INAV Terrain (SRTM1 30m)</span></div>' +
+                '<div class="sync-info-row"><span>Terrain Files:</span><span>' + tiles.length + ' .DAT file(s)</span></div>' +
+                '<div class="sync-info-row"><span>Est. Output:</span><span>~' + totalSizeMB + ' MB</span></div>' +
+                '<div class="sync-info-row"><span>SRTM Download:</span><span>~' + hgtSizeMB + ' MB compressed</span></div>' +
+                '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + fileList.join(', ') + '</span></div>' +
+                '<div style="margin:10px 0 0 0; font-size:12px; color:#aaa; line-height:1.5;">' +
+                'Source: NASA SRTM 30m elevation data (public domain)<br>' +
+                (sdHandle
+                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads SRTM data, converts to .DAT, and writes to FC SD card.'
+                    : '<b style="color:#87b025;">Generate & Download</b> creates a ZIP with .DAT files for your FC SD card.') +
+                '</div>' +
+                '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f FREESPAC.E will be auto-deleted from SD card during sync. INAV will recreate it on next boot.</div>';
+
+            var cancelBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
+            if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
+
+            var mainBtn = document.getElementById('mainConfirmBtn');
+            mainBtn.innerText = sdHandle ? '\ud83c\udf0d Generate & Sync' : '\ud83c\udf0d Generate & Download';
+            mainBtn.className = 'btn-confirm';
+            mainBtn.style.display = 'block';
+            mainBtn.onclick = function() { terrainGenerateAndSync(tiles); };
+
+            var importBtn = document.getElementById('terrainImportBtn');
+            if (importBtn) importBtn.style.display = 'none';
+
+            document.getElementById('syncOverlay').style.display = 'flex';
+        }
+
+        map.on('moveend zoomend', function() { if (isTerrainMode()) updateTerrainGrid(); });
 
         /*
          * Final bootstrap sequence:
