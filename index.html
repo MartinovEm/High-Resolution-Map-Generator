@@ -1741,8 +1741,8 @@
         }
 
         function hgtElevation(hgtView, degLat, degLon, lat, lon) {
-            var fracLat = lat - degLat;
-            var fracLon = lon - degLon;
+            var fracLat = Math.max(0, Math.min(1, lat - degLat));
+            var fracLon = Math.max(0, Math.min(1, lon - degLon));
             var rowF = (1 - fracLat) * 3600;
             var colF = fracLon * 3600;
             var r0 = Math.max(0, Math.min(3599, Math.floor(rowF)));
