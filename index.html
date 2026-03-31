@@ -1740,9 +1740,26 @@
             return Math.floor(eastDist / (TERRAIN_SPACING * TERRAIN_BLK_SPACE_Y));
         }
 
-        function hgtElevation(hgtView, degLat, degLon, lat, lon) {
-            var fracLat = Math.max(0, Math.min(1, lat - degLat));
-            var fracLon = Math.max(0, Math.min(1, lon - degLon));
+        function makeHgtView(hgtData) {
+            var hgtBuf = (hgtData.buffer && hgtData.buffer.byteLength === hgtData.length)
+                ? hgtData.buffer : hgtData.buffer.slice(hgtData.byteOffset, hgtData.byteOffset + hgtData.byteLength);
+            return new DataView(hgtBuf);
+        }
+
+        function hgtElevation(tileCache, degLat, degLon, lat, lon) {
+            var tileLat = Math.floor(lat);
+            var tileLon = Math.floor(lon);
+            var key = tileLat + '_' + tileLon;
+            var hgtView = tileCache[key];
+            if (!hgtView) {
+                key = degLat + '_' + degLon;
+                hgtView = tileCache[key];
+                if (!hgtView) return 0;
+                tileLat = degLat;
+                tileLon = degLon;
+            }
+            var fracLat = Math.max(0, Math.min(1, lat - tileLat));
+            var fracLon = Math.max(0, Math.min(1, lon - tileLon));
             var rowF = (1 - fracLat) * 3600;
             var colF = fracLon * 3600;
             var r0 = Math.max(0, Math.min(3599, Math.floor(rowF)));
@@ -1755,7 +1772,7 @@
                 var v = hgtView.getInt16((r * SRTM_GRID + c) * 2, false);
                 return v === -32768 ? 0 : v;
             }
-            return Math.round(
+            return Math.trunc(
                 getH(r0, c0) * (1 - dr) * (1 - dc) +
                 getH(r0, c1) * (1 - dr) * dc +
                 getH(r1, c0) * dr * (1 - dc) +
@@ -1810,10 +1827,7 @@
             return u8;
         }
 
-        async function createDatFromHgt(degLat, degLon, hgtData, progressCb) {
-            var hgtBuf = (hgtData.buffer && hgtData.buffer.byteLength === hgtData.length)
-                ? hgtData.buffer : hgtData.buffer.slice(hgtData.byteOffset, hgtData.byteOffset + hgtData.byteLength);
-            var hgtView = new DataView(hgtBuf);
+        async function createDatFromHgt(degLat, degLon, tileCache, progressCb) {
             var baseLat = degLat * 10000000;
             var baseLon = degLon * 10000000;
             var numX = 0;
@@ -1832,8 +1846,10 @@
                     var heights = new Int16Array(TERRAIN_BLK_SIZE_X * TERRAIN_BLK_SIZE_Y);
                     for (var gx = 0; gx < TERRAIN_BLK_SIZE_X; gx++) {
                         for (var gy = 0; gy < TERRAIN_BLK_SIZE_Y; gy++) {
-                            var pt = addOffset(latE7, lonE7, gx * TERRAIN_SPACING, gy * TERRAIN_SPACING);
-                            heights[gx * TERRAIN_BLK_SIZE_Y + gy] = hgtElevation(hgtView, degLat, degLon, pt[0] * 1e-7, pt[1] * 1e-7);
+                            var pt = addOffset(baseLat, baseLon,
+                                (ix * TERRAIN_BLK_SPACE_X + gx) * TERRAIN_SPACING,
+                                (iy * TERRAIN_BLK_SPACE_Y + gy) * TERRAIN_SPACING);
+                            heights[gx * TERRAIN_BLK_SIZE_Y + gy] = hgtElevation(tileCache, degLat, degLon, pt[0] * 1e-7, pt[1] * 1e-7);
                         }
                     }
                     var block = packTerrainBlock(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
@@ -1985,6 +2001,7 @@
             var totalTiles = tiles.length;
             var completed = 0;
             var datFiles = [];
+            var hgtCache = {};
             for (var ti = 0; ti < tiles.length; ti++) {
                 if (syncAborted) break;
                 var tile = tiles[ti];
@@ -1992,41 +2009,57 @@
                 appendLog('Fetching ' + name + '.hgt.gz...');
                 var prefix = 'Tile ' + (completed + 1) + '/' + totalTiles + ': ';
                 document.getElementById('downloadStatus').innerText = prefix + '⬇️ Connecting to SRTM server...';
-                var hgtData;
-                try {
-                    hgtData = await fetchSrtmTile(tile.lat, tile.lon, function(stage) {
-                        var msg = stage === 'connecting' ? '⬇️ Connecting to SRTM server...'
-                                : stage === 'downloading' ? '⬇️ Downloading ' + name + '.hgt.gz...'
-                                : '📦 Decompressing ' + name + '...';
-                        document.getElementById('downloadStatus').innerText = prefix + msg;
-                    });
-                    document.getElementById('downloadStatus').innerText = prefix + '✅ Downloaded ' + name + ' (' + (hgtData.length / 1048576).toFixed(1) + ' MB)';
-                    appendLog('Downloaded ' + name + '.hgt (' + (hgtData.length / 1048576).toFixed(1) + ' MB)');
-                } catch (e) {
-                    appendLog('Auto-fetch failed — use "Import HGT Files" to select local .hgt.gz files.', true);
-                    document.getElementById('downloadStatus').innerText = 'Fetch blocked. Use Import button below.';
-                    document.getElementById('modalActions').style.display = 'flex';
-                    document.getElementById('syncInfo').innerHTML =
-                        '<div style="color:#aaa; font-size:13px; line-height:1.6; margin:8px 0;">' +
-                        'Direct download failed (CORS restriction from file:// origin).<br><br>' +
-                        '<b style="color:#ff9800;">Option 1:</b> Click <b style="color:#87b025;">Import HGT Files</b> and select .hgt.gz files ' +
-                        'downloaded from:<br><a href="' + srtmUrl(tile.lat, tile.lon) + '" target="_blank" style="color:#87b025; word-break:break-all; font-size:11px;">' + srtmUrl(tile.lat, tile.lon) + '</a><br><br>' +
-                        '<b style="color:#ff9800;">Option 2:</b> Serve this app from a local web server (no CORS issue).' +
-                        '</div>';
-                    var mainBtn = document.getElementById('mainConfirmBtn');
-                    mainBtn.innerText = '\ud83d\udce5 Import HGT Files';
-                    mainBtn.style.display = 'block';
-                    mainBtn.onclick = function() { importHgtFiles(tiles); };
-                    var cancelBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
-                    if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
-                    return;
+                var primaryKey = tile.lat + '_' + tile.lon;
+                if (!hgtCache[primaryKey]) {
+                    var hgtData;
+                    try {
+                        hgtData = await fetchSrtmTile(tile.lat, tile.lon, function(stage) {
+                            var msg = stage === 'connecting' ? '⬇️ Connecting to SRTM server...'
+                                    : stage === 'downloading' ? '⬇️ Downloading ' + name + '.hgt.gz...'
+                                    : '📦 Decompressing ' + name + '...';
+                            document.getElementById('downloadStatus').innerText = prefix + msg;
+                        });
+                        hgtCache[primaryKey] = makeHgtView(hgtData);
+                        document.getElementById('downloadStatus').innerText = prefix + '✅ Downloaded ' + name + ' (' + (hgtData.length / 1048576).toFixed(1) + ' MB)';
+                        appendLog('Downloaded ' + name + '.hgt (' + (hgtData.length / 1048576).toFixed(1) + ' MB)');
+                    } catch (e) {
+                        appendLog('Auto-fetch failed — use "Import HGT Files" to select local .hgt.gz files.', true);
+                        document.getElementById('downloadStatus').innerText = 'Fetch blocked. Use Import button below.';
+                        document.getElementById('modalActions').style.display = 'flex';
+                        document.getElementById('syncInfo').innerHTML =
+                            '<div style="color:#aaa; font-size:13px; line-height:1.6; margin:8px 0;">' +
+                            'Direct download failed (CORS restriction from file:// origin).<br><br>' +
+                            '<b style="color:#ff9800;">Option 1:</b> Click <b style="color:#87b025;">Import HGT Files</b> and select .hgt.gz files ' +
+                            'downloaded from:<br><a href="' + srtmUrl(tile.lat, tile.lon) + '" target="_blank" style="color:#87b025; word-break:break-all; font-size:11px;">' + srtmUrl(tile.lat, tile.lon) + '</a><br><br>' +
+                            '<b style="color:#ff9800;">Option 2:</b> Serve this app from a local web server (no CORS issue).' +
+                            '</div>';
+                        var mainBtn = document.getElementById('mainConfirmBtn');
+                        mainBtn.innerText = '\ud83d\udce5 Import HGT Files';
+                        mainBtn.style.display = 'block';
+                        mainBtn.onclick = function() { importHgtFiles(tiles); };
+                        var cancelBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
+                        if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
+                        return;
+                    }
+                }
+                var neighbors = [[tile.lat, tile.lon + 1], [tile.lat + 1, tile.lon], [tile.lat + 1, tile.lon + 1]];
+                for (var ni = 0; ni < neighbors.length; ni++) {
+                    var nKey = neighbors[ni][0] + '_' + neighbors[ni][1];
+                    if (!hgtCache[nKey]) {
+                        try {
+                            document.getElementById('downloadStatus').innerText = prefix + '⬇️ Fetching adjacent ' + srtmTileName(neighbors[ni][0], neighbors[ni][1]) + '...';
+                            var nData = await fetchSrtmTile(neighbors[ni][0], neighbors[ni][1]);
+                            hgtCache[nKey] = makeHgtView(nData);
+                            appendLog('Fetched adjacent tile ' + srtmTileName(neighbors[ni][0], neighbors[ni][1]));
+                        } catch (e) { /* adjacent tile not available — will clamp at edge */ }
+                    }
                 }
                 document.getElementById('downloadStatus').innerText = prefix + '⚙️ Converting ' + name + ' to .DAT...';
                 try {
                     var capCompleted = completed;
                     var capPrefix = prefix;
                     var capName = name;
-                    var datData = await createDatFromHgt(tile.lat, tile.lon, hgtData, function(done, total) {
+                    var datData = await createDatFromHgt(tile.lat, tile.lon, hgtCache, function(done, total) {
                         var pct = ((capCompleted + done / total) / totalTiles * 100).toFixed(0);
                         document.getElementById('progressFill').style.width = pct + '%';
                         document.getElementById('downloadStatus').innerText = capPrefix + '⚙️ Converting ' + capName + ' (' + Math.round(done / total * 100) + '%)';
@@ -2038,7 +2071,6 @@
                     appendLog('Conversion failed for ' + name + ': ' + e.message, true);
                 }
                 completed++;
-                hgtData = null;
             }
             if (syncAborted || datFiles.length === 0) {
                 if (datFiles.length === 0) {
@@ -2171,8 +2203,9 @@
             }
             if (hgtFiles.length > 0) {
                 appendLog('Converting ' + hgtFiles.length + ' HGT file(s) to .DAT...');
+                var tileCache = {};
+                var primaryTiles = [];
                 for (var hi = 0; hi < hgtFiles.length; hi++) {
-                    if (syncAborted) break;
                     var hf = hgtFiles[hi];
                     var match = hf.name.match(/([NS])(\d{2})([EW])(\d{3})/i);
                     if (!match) { appendLog('Cannot parse coords from: ' + hf.name, true); continue; }
@@ -2183,16 +2216,21 @@
                         appendLog('Invalid HGT size for ' + hf.name + ': expected ' + (SRTM_GRID * SRTM_GRID * 2) + ', got ' + hgtArr.length, true);
                         continue;
                     }
-                    document.getElementById('downloadStatus').innerText = 'Converting ' + hf.name + '...';
+                    tileCache[hLat + '_' + hLon] = makeHgtView(hgtArr);
+                    primaryTiles.push({ lat: hLat, lon: hLon, name: hf.name });
+                }
+                for (var pi = 0; pi < primaryTiles.length; pi++) {
+                    if (syncAborted) break;
+                    var pt = primaryTiles[pi];
+                    document.getElementById('downloadStatus').innerText = 'Converting ' + pt.name + '...';
                     try {
-                        var capHi = hi;
-                        var dat = await createDatFromHgt(hLat, hLon, hgtArr, function(done, total) {
+                        var dat = await createDatFromHgt(pt.lat, pt.lon, tileCache, function(done, total) {
                             document.getElementById('progressFill').style.width = ((done / total) * 100).toFixed(0) + '%';
                         });
-                        datFiles.push({ name: terrainDatFilename(hLat, hLon), data: dat });
-                        appendLog('Converted: ' + terrainDatFilename(hLat, hLon) + ' (' + (dat.length / 1048576).toFixed(1) + ' MB)');
+                        datFiles.push({ name: terrainDatFilename(pt.lat, pt.lon), data: dat });
+                        appendLog('Converted: ' + terrainDatFilename(pt.lat, pt.lon) + ' (' + (dat.length / 1048576).toFixed(1) + ' MB)');
                     } catch (e) {
-                        appendLog('Conversion failed: ' + hf.name + ': ' + e.message, true);
+                        appendLog('Conversion failed: ' + pt.name + ': ' + e.message, true);
                     }
                 }
             }
