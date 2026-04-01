@@ -1772,12 +1772,13 @@
                 var v = hgtView.getInt16((r * SRTM_GRID + c) * 2, false);
                 return v === -32768 ? 0 : v;
             }
-            return Math.trunc(
+            var alt = Math.trunc(
                 getH(r0, c0) * (1 - dr) * (1 - dc) +
                 getH(r0, c1) * (1 - dr) * dc +
                 getH(r1, c0) * dr * (1 - dc) +
                 getH(r1, c1) * dr * dc
             );
+            return alt < 0 ? 0 : alt;
         }
 
         function srtmTileName(lat, lon) {
