@@ -89,6 +89,7 @@
         #map.sync-dock-visible .leaflet-bottom { bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)) !important; }
         #mouse-coords { position: absolute; bottom: calc(36px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-offset, 0px)); right: 10px; white-space: nowrap; }
         .measuring-addon { border-right: 1px solid rgba(135, 176, 37, 0.5); margin-right: 10px; padding-right: 10px; color: #ffeb3b; }
+        #alt-output { border-left: 1px solid rgba(135, 176, 37, 0.5); margin-left: 10px; padding-left: 10px; color: #87b025; }
         
         #zoom-display-map, #measure-btn-map, #fullscreen-btn-map { position: absolute; right: 10px; z-index: 1005; background: rgba(30, 30, 30, 0.9); color: #87b025; border: 2px solid #87b025; border-radius: 4px; font-weight: bold; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px; width: 101px; height: 26px; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
         #zoom-display-map { top: 10px; pointer-events: none; }
@@ -200,7 +201,11 @@
                 <select id="maxZoom" onchange="triggerUpdate(); saveSettings();"></select>
             </div>
         </div>
-        <div style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic;">Hint: Each extra zoom level ≈ 4× more tiles. Keep the area small or lower max zoom (when large area selected) to avoid long syncs and rate limits.</div>
+        <div id="hintMapTiles" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic;">Hint: Each extra zoom level ≈ 4× more tiles. Keep the area small or lower max zoom (when large area selected) to avoid long syncs and rate limits.</div>
+        <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One .DAT file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.</div>
+
+        <div id="terrainAltDiv" class="toggle-container" style="display:none;"><span class="label" style="margin:0;">📍 Live Altitude</span><label class="switch"><input type="checkbox" id="terrainAltToggle" onchange="toggleLiveAlt()"><span class="slider"></span></label></div>
+        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude will appear after generating .DAT files (uses cached SRTM data).</div>
 
         <div id="zoomLockDiv" class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
         <div id="syncDock">
@@ -215,7 +220,7 @@
         <div id="crosshair">+</div>
         <div id="hud-measure-popup">0m / 0ft</div>
         <div id="syncDockMapHost"></div>
-        <div id="mouse-coords"><span id="measure-output" class="measuring-addon" style="display:none">0m / 0ft</span><span id="coords-output">Lat: 0.0000, Lng: 0.0000</span></div>
+        <div id="mouse-coords"><span id="measure-output" class="measuring-addon" style="display:none">0m / 0ft</span><span id="coords-output">Lat: 0.0000, Lng: 0.0000</span><span id="alt-output" style="display:none">Alt: —</span></div>
         <div id="zoom-display-map">Zoom: 12</div>
         <div id="measure-btn-map" onclick="toggleMeasure()">📏 Measure</div>
         <div id="fullscreen-btn-map" onclick="toggleFullscreen()">⛶ Fullscreen</div>
@@ -952,7 +957,37 @@
             if (isMeasuring) { btn.classList.add('active'); measureStart = map.getCenter(); pop.style.display = 'block'; addon.style.display = 'inline-block'; pop.innerText = "0m / 0ft"; addon.innerText = "0m / 0ft"; } 
             else { btn.classList.remove('active'); measureStart = null; pop.style.display = 'none'; addon.style.display = 'none'; if (measureLine) { map.removeLayer(measureLine); measureLine = null; } } 
         }
-        map.on('mousemove', e => { document.getElementById('coords-output').innerText = `Lat: ${e.latlng.lat.toFixed(4)}, Lng: ${e.latlng.lng.toFixed(4)}`; });
+        var liveAltEnabled = false;
+        var liveAltCache = {};
+
+        function toggleLiveAlt() {
+            liveAltEnabled = document.getElementById('terrainAltToggle').checked;
+            document.getElementById('alt-output').style.display = liveAltEnabled ? 'inline' : 'none';
+            document.getElementById('terrainAltHint').style.display = liveAltEnabled ? '' : 'none';
+            if (!liveAltEnabled) document.getElementById('alt-output').innerText = 'Alt: —';
+        }
+
+        function getAltFromCache(lat, lon) {
+            var tileLat = Math.floor(lat);
+            var tileLon = Math.floor(lon);
+            var key = tileLat + '_' + tileLon;
+            var hgtView = liveAltCache[key];
+            if (!hgtView) return null;
+            var fracLat = Math.max(0, Math.min(1, lat - tileLat));
+            var fracLon = Math.max(0, Math.min(1, lon - tileLon));
+            var row = Math.max(0, Math.min(3600, Math.round((1 - fracLat) * 3600)));
+            var col = Math.max(0, Math.min(3600, Math.round(fracLon * 3600)));
+            var v = hgtView.getInt16((row * 3601 + col) * 2, false);
+            if (v === -32768) return 0;
+            return v < 0 ? 0 : v;
+        }
+
+        map.on('mousemove', e => {
+            document.getElementById('coords-output').innerText = `Lat: ${e.latlng.lat.toFixed(4)}, Lng: ${e.latlng.lng.toFixed(4)}`;
+            if (!liveAltEnabled) return;
+            var alt = getAltFromCache(e.latlng.lat, e.latlng.lng);
+            document.getElementById('alt-output').innerText = alt !== null ? 'Alt: ' + alt + 'm' : 'Alt: —';
+        });
         map.on('move', () => { if (isMeasuring && measureStart) { const currentCenter = map.getCenter(); const distM = measureStart.distanceTo(currentCenter); const combined = `${Math.round(distM)}m / ${Math.round(distM*3.28)}ft`; document.getElementById('hud-measure-popup').innerText = combined; document.getElementById('measure-output').innerText = combined; if (measureLine) map.removeLayer(measureLine); measureLine = L.polyline([measureStart, currentCenter], {color: mapContainer.classList.contains('dark-contrast-theme') ? '#fff' : '#87b025', weight: 3, dashArray: '5, 5'}).addTo(map); } });
 
         /* Export pipeline state and throttling configuration. */
@@ -1633,11 +1668,19 @@
             const tiles = getTerrainDegreeTiles(bounds);
             const estSizeMB = tiles.reduce(function(s, t) { return s + estimateDatSizeMB(t.lat); }, 0).toFixed(0);
             const fileList = tiles.map(t => terrainDatFilename(t.lat, t.lon));
+            // Approximate total grid coverage: each 1°×1° tile ≈ 111km × 111km×cos(midLat)
+            const midLat = (bounds.getNorth() + bounds.getSouth()) / 2;
+            const tileKmNS = 111.0;
+            const tileKmEW = 111.0 * Math.cos(midLat * Math.PI / 180);
+            const gridAreaSqM = tiles.length * tileKmNS * tileKmEW * 1e6;
             status.innerHTML =
-                '<span style="color:#ffeb3b">Area: ' + formatArea(area) + '</span><br>' +
-                '<span style="color:#ffeb3b">Terrain Files: ' + tiles.length + ' .DAT file(s)</span><br>' +
+                '<span style="color:#ffeb3b">Selected Area: ' + formatArea(area) + '</span><br>' +
+                '<span style="color:#ffeb3b">Grid Coverage: ' + tiles.length + ' tile(s) · ' + formatArea(gridAreaSqM) + '</span><br>' +
                 '<span style="color:#87b025">Est. Size: ~' + estSizeMB + ' MB</span><br>' +
                 '<span style="color:#aaa; font-size:11px">' + fileList.join(', ') + '</span>';
+            if (bounds.getNorth() > 60 || bounds.getSouth() < -56) {
+                status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond SRTM coverage (60°N to 56°S). Tiles outside this range will have no elevation data.</span>';
+            }
         }
 
         var preTerrainZoom = null;
@@ -1675,6 +1718,10 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = isTerrain ? 'none' : '';
             });
+            document.getElementById('hintMapTiles').style.display = isTerrain ? 'none' : '';
+            document.getElementById('hintTerrain').style.display = isTerrain ? '' : 'none';
+            document.getElementById('terrainAltDiv').style.display = isTerrain ? '' : 'none';
+            if (!isTerrain) { document.getElementById('terrainAltToggle').checked = false; toggleLiveAlt(); }
             if (isTerrain) {
                 const yst = document.getElementById('yaapuSubTargetDiv');
                 if (yst) yst.style.display = 'none';
@@ -2048,10 +2095,8 @@
                     var nKey = neighbors[ni][0] + '_' + neighbors[ni][1];
                     if (!hgtCache[nKey]) {
                         try {
-                            document.getElementById('downloadStatus').innerText = prefix + '⬇️ Fetching adjacent ' + srtmTileName(neighbors[ni][0], neighbors[ni][1]) + '...';
                             var nData = await fetchSrtmTile(neighbors[ni][0], neighbors[ni][1]);
                             hgtCache[nKey] = makeHgtView(nData);
-                            appendLog('Fetched adjacent tile ' + srtmTileName(neighbors[ni][0], neighbors[ni][1]));
                         } catch (e) { /* adjacent tile not available — will clamp at edge */ }
                     }
                 }
@@ -2073,6 +2118,8 @@
                 }
                 completed++;
             }
+            // Share downloaded HGT tiles with live altitude readout
+            Object.keys(hgtCache).forEach(function(k) { liveAltCache[k] = hgtCache[k]; });
             if (syncAborted || datFiles.length === 0) {
                 if (datFiles.length === 0) {
                     document.getElementById('downloadStatus').innerText = 'No files generated.';
@@ -2234,6 +2281,8 @@
                         appendLog('Conversion failed: ' + pt.name + ': ' + e.message, true);
                     }
                 }
+                // Share imported HGT tiles with live altitude readout
+                Object.keys(tileCache).forEach(function(k) { liveAltCache[k] = tileCache[k]; });
             }
             if (datFiles.length === 0) {
                 document.getElementById('downloadStatus').innerText = 'No .DAT files generated.';
