@@ -985,9 +985,9 @@
             if (target === 'b14ckyy') {
                 const base = isZipMode ? ["ethosmaps", "maps"] : ["bitmaps", "ethosmaps", "maps"];
                 if (provider === 'ESRI') {
-                    return [...base, provider, mapType, displayZoom, `${y}`, `${x}.png`];
+                    return [...base, provider, mapType, displayZoom, `${y}`, `${x}.jpg`];
                 }
-                return [...base, provider, mapType, displayZoom, `${x}`, `${y}.png`];
+                return [...base, provider, mapType, displayZoom, `${x}`, `${y}.jpg`];
             }
             const yaapuMapName = (mapType === 'Satellite') ? 'GoogleSatelliteMap' : (mapType === 'Hybrid' ? 'GoogleHybridMap' : 'GoogleMap');
             const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
@@ -1007,13 +1007,15 @@
             return { canvas, ctx: canvas.getContext('2d') };
         }
 
-        /* Convert a resized tile canvas into a PNG blob for storage or ZIP export. */
-        function canvasToBlob(canvas) {
+        /* Convert a resized tile canvas into a blob for storage or ZIP export. */
+        function canvasToBlob(canvas, target) {
+            const mimeType = (target === 'b14ckyy') ? 'image/jpeg' : 'image/png';
+            const quality = (target === 'b14ckyy') ? 0.7 : undefined;
             return new Promise((resolve, reject) => {
                 canvas.toBlob(blob => {
                     if (!blob) return reject(new Error('Canvas conversion failed'));
                     resolve(blob);
-                }, 'image/png');
+                }, mimeType, quality);
             });
         }
 
@@ -1062,7 +1064,7 @@
         }
 
         /* Download and resize a single tile, adding label overlay imagery where required. */
-        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx) {
+        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, target) {
             const img = await loadImage(getTileUrl(provider, mapType, z, x, y));
             ctx.clearRect(0, 0, 100, 100);
             ctx.drawImage(img, 0, 0, 256, 256, 0, 0, 100, 100);
@@ -1073,7 +1075,7 @@
                     ctx.drawImage(labelImg, 0, 0, 256, 256, 0, 0, 100, 100);
                 } catch (e) {}
             }
-            const blob = await canvasToBlob(canvas);
+            const blob = await canvasToBlob(canvas, target);
             if (!isLikelyValidTileBlob(blob)) {
                 throw new Error('Generated tile blob failed integrity check');
             }
@@ -1083,12 +1085,12 @@
         /* Retry transient tile download failures before declaring a tile lost.
          * Fast-fails (under 1.5s) indicate server rejection (e.g. 403 rate-limit),
          * so retries are skipped to avoid hammering the provider. */
-        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx) {
+        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, target) {
             let lastError = null;
             for (let attempt = 0; attempt <= MAX_TILE_RETRIES; attempt++) {
                 const t0 = Date.now();
                 try {
-                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx);
+                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, target);
                 } catch (err) {
                     lastError = err;
                     const elapsed = Date.now() - t0;
@@ -1189,9 +1191,9 @@
             let targetPath;
             if (target === 'b14ckyy') {
                 if (provider === 'ESRI') {
-                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].png`;
+                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].jpg`;
                 } else {
-                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
+                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].jpg`;
                 }
             } else {
                 const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
@@ -1304,7 +1306,7 @@
                     const tileId = `${provider}/${mapType}/${z}/${x}/${y}`;
                     try {
                         if (!zipCache[tileId] || forceOverwrite) {
-                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx);
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, target);
                         }
                         consecutiveErrors = 0;
 
@@ -1360,7 +1362,7 @@
                         const { z, x, y } = failedTiles[ci];
                         const tileId = `${provider}/${mapType}/${z}/${x}/${y}`;
                         try {
-                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx);
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, target);
                             const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y);
                             if (sdHandle) {
                                 let currentDir = sdHandle;
@@ -1414,9 +1416,9 @@
                     let targetPath;
                     if (target === 'b14ckyy') {
                         if (provider === 'ESRI') {
-                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].png`;
+                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].jpg`;
                         } else {
-                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].png`;
+                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].jpg`;
                         }
                     } else {
                         const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
