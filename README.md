@@ -94,7 +94,6 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 	 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0ffde6b7-4b6e-43f0-9975-ed1528dccd2a" />
 
 
-
 11. **Transfer to Device**
 	 - If you downloaded a ZIP, extract it and copy the extracted folder `ethosmaps` or `yaapu` to your radio’s SD card -> `bitmaps/`
 
