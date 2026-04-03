@@ -2080,8 +2080,11 @@
             var forceOverwrite = document.getElementById('overwriteToggle').checked;
             appendLog('Writing ' + datFiles.length + ' file(s) to FC SD card...' + (forceOverwrite ? ' (overwrite)' : ' (skip existing)'));
             document.getElementById('progressFill').style.width = '0%';
-            document.getElementById('downloadStatus').innerText = 'Writing to SD card...';
+            document.getElementById('downloadStatus').innerText = 'Writing to SD card: 0 / ' + datFiles.length + '...';
+            startTime = Date.now();
             var total = datFiles.length, processed = 0, failedCount = 0, skipped = 0;
+            var totalBytes = datFiles.reduce(function(s, f) { return s + f.data.length; }, 0);
+            var writtenBytes = 0;
             for (var i = 0; i < datFiles.length; i++) {
                 if (syncAborted) break;
                 var df = datFiles[i];
@@ -2091,6 +2094,7 @@
                             await sdHandle.getFileHandle(df.name);
                             skipped++;
                             appendLog('Skipped (exists): ' + df.name);
+                            writtenBytes += df.data.length;
                             processed++;
                             updateSyncProgress(processed, total, startTime, failedCount);
                             continue;
@@ -2098,7 +2102,23 @@
                     }
                     var fh = await sdHandle.getFileHandle(df.name, { create: true });
                     var wr = await fh.createWritable();
-                    await wr.write(df.data);
+                    var CHUNK = 65536;
+                    for (var off = 0; off < df.data.length; off += CHUNK) {
+                        if (syncAborted) break;
+                        var end = Math.min(off + CHUNK, df.data.length);
+                        await wr.write(df.data.subarray(off, end));
+                        writtenBytes += (end - off);
+                        var pct = totalBytes > 0 ? (writtenBytes / totalBytes * 100) : 0;
+                        document.getElementById('progressFill').style.width = pct.toFixed(0) + '%';
+                        var elapsed = Date.now() - startTime;
+                        if (writtenBytes > 0 && elapsed > 500) {
+                            var remainMs = Math.max(0, elapsed / writtenBytes * (totalBytes - writtenBytes));
+                            var mins = Math.floor(remainMs / 60000);
+                            var secs = Math.ceil((remainMs % 60000) / 1000);
+                            var speed = (writtenBytes / 1024 / (elapsed / 1000)).toFixed(0);
+                            document.getElementById('downloadStatus').innerText = 'Writing ' + df.name + '... ' + pct.toFixed(0) + '% (' + speed + ' KB/s, ' + mins + ':' + secs.toString().padStart(2, '0') + ' remaining)';
+                        }
+                    }
                     await wr.close();
                     appendLog('Wrote ' + df.name + ' (' + (df.data.length / 1048576).toFixed(1) + ' MB)');
                 } catch (e) {
@@ -2116,12 +2136,21 @@
             appendLog('Creating ZIP archive...');
             document.getElementById('downloadStatus').innerText = 'Creating ZIP...';
             document.getElementById('progressFill').style.width = '0%';
+            var zipStart = Date.now();
             var zip = new JSZip();
             for (var i = 0; i < datFiles.length; i++) {
                 zip.file(datFiles[i].name, datFiles[i].data);
             }
             var blob = await zip.generateAsync({ type: 'blob' }, function(meta) {
-                document.getElementById('progressFill').style.width = meta.percent.toFixed(0) + '%';
+                var pct = meta.percent;
+                document.getElementById('progressFill').style.width = pct.toFixed(0) + '%';
+                if (pct > 0) {
+                    var elapsed = Date.now() - zipStart;
+                    var remainMs = Math.max(0, elapsed / pct * (100 - pct));
+                    var mins = Math.floor(remainMs / 60000);
+                    var secs = Math.ceil((remainMs % 60000) / 1000);
+                    document.getElementById('downloadStatus').innerText = 'Creating ZIP... ' + pct.toFixed(0) + '% (' + mins + ':' + secs.toString().padStart(2, '0') + ' remaining)';
+                }
             });
             saveAs(blob, 'INAV_Terrain_SRTM.zip');
             appendLog('ZIP downloaded: INAV_Terrain_SRTM.zip');
@@ -2272,7 +2301,15 @@
                 }
             }
             if (sdHandle) {
-                document.getElementById('downloadStatus').innerText = 'Generation complete! Syncing to SD card...';
+                var totalSizeMB = datFiles.reduce(function(s, f) { return s + f.data.length; }, 0) / 1048576;
+                document.getElementById('modalHeader').innerText = 'Writing to SD Card...';
+                document.getElementById('syncInfo').innerHTML =
+                    '<div class="sync-info-row"><span>Target:</span><span>INAV Terrain (SRTM1 30m)</span></div>' +
+                    '<div class="sync-info-row"><span>Terrain Files:</span><span>' + datFiles.length + ' .DAT file(s)</span></div>' +
+                    '<div class="sync-info-row"><span>Total Size:</span><span>~' + totalSizeMB.toFixed(0) + ' MB</span></div>' +
+                    '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + datFiles.map(function(f) { return f.name; }).join(', ') + '</span></div>' +
+                    '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f FREESPAC.E will be auto-deleted from SD card during sync. INAV will recreate it on next boot.</div>';
+                document.getElementById('downloadStatus').innerText = 'Syncing to SD card...';
                 await writeTerrainToSD(datFiles, startTime);
             } else {
                 document.getElementById('downloadStatus').innerText = 'Generation complete!';
