@@ -205,7 +205,7 @@
         <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One .DAT file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.</div>
 
         <div id="terrainAltDiv" class="toggle-container" style="display:none;"><span class="label" style="margin:0;">📍 Live Altitude</span><label class="switch"><input type="checkbox" id="terrainAltToggle" onchange="toggleLiveAlt()"><span class="slider"></span></label></div>
-        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude will appear after generating .DAT files (uses cached SRTM data).</div>
+        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude available after generating .DAT files — uses locally cached SRTM data to avoid unnecessary server requests.</div>
 
         <div id="zoomLockDiv" class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
         <div id="syncDock">
@@ -213,6 +213,7 @@
             <div id="status" role="status" aria-live="polite">Search or zoom to your field...</div>
             <div id="logArea" style="font-size:11px; color:#ffb300; margin-top:6px; min-height:18px; max-height:80px; overflow-y:auto; background:rgba(30,30,30,0.7); border-radius:3px; padding:4px 6px; display:none;"></div>
         </div>
+        <button id="clearCacheBtn" onclick="clearHgtCacheUI()" style="display:none; padding:6px 10px; font-size:12px; background:#2a2a2a; color:#87b025; border:1px solid #444; border-radius:4px; cursor:pointer; width:100%;" aria-label="Clear HGT Cache"><span id="hgtCacheInfo"></span></button>
         <button id="restoreBtn" onclick="restoreSettings()" style="padding: 6px 10px; font-size: 12px; background: #ff4444; color: white;" aria-label="Restore Settings">🔄 Restore Settings</button>
     </div>
 
@@ -959,6 +960,118 @@
         }
         var liveAltEnabled = false;
         var liveAltCache = {};
+
+        // ---- IndexedDB HGT Cache (persist downloaded SRTM tiles for resume / reuse) ----
+        var hgtDbInstance = null;
+        function openHgtDb() {
+            if (hgtDbInstance) return Promise.resolve(hgtDbInstance);
+            return new Promise(function(resolve, reject) {
+                var req = indexedDB.open('terrainHgtCache', 1);
+                req.onupgradeneeded = function(e) { e.target.result.createObjectStore('hgt'); };
+                req.onsuccess = function(e) { hgtDbInstance = e.target.result; resolve(hgtDbInstance); };
+                req.onerror = function() { reject(req.error); };
+            });
+        }
+        function hgtDbGet(key) {
+            return openHgtDb().then(function(db) {
+                return new Promise(function(resolve) {
+                    var tx = db.transaction('hgt', 'readonly');
+                    var req = tx.objectStore('hgt').get(key);
+                    req.onsuccess = function() { resolve(req.result || null); };
+                    req.onerror = function() { resolve(null); };
+                });
+            }).catch(function() { return null; });
+        }
+        function hgtDbPut(key, data) {
+            return openHgtDb().then(function(db) {
+                return new Promise(function(resolve) {
+                    var tx = db.transaction('hgt', 'readwrite');
+                    tx.objectStore('hgt').put(data, key);
+                    tx.oncomplete = function() { resolve(); };
+                    tx.onerror = function() { resolve(); };
+                });
+            }).catch(function() {});
+        }
+        function hgtDbCachedSet() {
+            return openHgtDb().then(function(db) {
+                return new Promise(function(resolve) {
+                    var tx = db.transaction('hgt', 'readonly');
+                    var req = tx.objectStore('hgt').getAllKeys();
+                    req.onsuccess = function() { resolve(new Set(req.result)); };
+                    req.onerror = function() { resolve(new Set()); };
+                });
+            }).catch(function() { return new Set(); });
+        }
+        function hgtDbClear() {
+            return openHgtDb().then(function(db) {
+                return new Promise(function(resolve) {
+                    var tx = db.transaction('hgt', 'readwrite');
+                    tx.objectStore('hgt').clear();
+                    tx.oncomplete = function() { resolve(); };
+                    tx.onerror = function() { resolve(); };
+                });
+            }).catch(function() {});
+        }
+        function showMiniModal(message, onConfirm) {
+            var overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:10001;display:flex;justify-content:center;align-items:center;';
+            var box = document.createElement('div');
+            box.style.cssText = 'background:#1e1e1e;border:2px solid #87b025;color:#fff;width:90%;max-width:360px;padding:20px;border-radius:8px;box-shadow:0 0 20px rgba(135,176,37,0.3);';
+            var msg = document.createElement('div');
+            msg.style.cssText = 'font-size:14px;text-align:center;margin-bottom:18px;line-height:1.5;';
+            msg.textContent = message;
+            box.appendChild(msg);
+            var btns = document.createElement('div');
+            btns.style.cssText = 'display:flex;gap:10px;';
+            if (onConfirm) {
+                var cancelBtn = document.createElement('button');
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.className = 'btn-cancel';
+                cancelBtn.style.cssText = 'flex:1;padding:12px;cursor:pointer;border-radius:4px;font-weight:bold;border:none;';
+                cancelBtn.onclick = function() { document.body.removeChild(overlay); };
+                btns.appendChild(cancelBtn);
+                var okBtn = document.createElement('button');
+                okBtn.textContent = 'Clear Cache';
+                okBtn.className = 'btn-confirm';
+                okBtn.style.cssText = 'flex:1;padding:12px;cursor:pointer;border-radius:4px;font-weight:bold;border:none;';
+                okBtn.onclick = function() { document.body.removeChild(overlay); onConfirm(); };
+                btns.appendChild(okBtn);
+            } else {
+                var closeBtn = document.createElement('button');
+                closeBtn.textContent = 'OK';
+                closeBtn.className = 'btn-confirm';
+                closeBtn.style.cssText = 'flex:1;padding:12px;cursor:pointer;border-radius:4px;font-weight:bold;border:none;';
+                closeBtn.onclick = function() { document.body.removeChild(overlay); };
+                btns.appendChild(closeBtn);
+            }
+            box.appendChild(btns);
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+        }
+        async function updateHgtCacheInfo() {
+            var el = document.getElementById('hgtCacheInfo');
+            var btn = document.getElementById('clearCacheBtn');
+            if (!el || !btn) return;
+            try {
+                var cached = await hgtDbCachedSet();
+                if (cached.size > 0 && isTerrainMode()) {
+                    el.textContent = '🗑️ Clear HGT Cache (' + cached.size + ' tile' + (cached.size > 1 ? 's' : '') + ', ~' + (cached.size * 25) + ' MB)';
+                    btn.style.display = '';
+                } else {
+                    btn.style.display = 'none';
+                }
+            } catch (e) { btn.style.display = 'none'; }
+        }
+        async function clearHgtCacheUI() {
+            var cached = await hgtDbCachedSet();
+            if (cached.size === 0) { showMiniModal('HGT cache is empty.'); return; }
+            showMiniModal('Clear ' + cached.size + ' cached HGT tile(s) (~' + (cached.size * 25) + ' MB)?', async function() {
+                await hgtDbClear();
+                liveAltCache = {};
+                updateHgtCacheInfo();
+                showMiniModal('HGT cache cleared.');
+            });
+        }
 
         function toggleLiveAlt() {
             liveAltEnabled = document.getElementById('terrainAltToggle').checked;
@@ -1741,7 +1854,8 @@
             }
             updateTerrainGrid();
             if (drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]);
-            if (isTerrain) updateTerrainStatus();
+            if (isTerrain) { updateTerrainStatus(); updateHgtCacheInfo(); }
+            else { var ccb = document.getElementById('clearCacheBtn'); if (ccb) ccb.style.display = 'none'; }
         }
 
         // ===== SRTM HGT → DAT CONVERSION ENGINE =====
@@ -2054,11 +2168,17 @@
                 if (syncAborted) break;
                 var tile = tiles[ti];
                 var name = srtmTileName(tile.lat, tile.lon);
-                appendLog('Fetching ' + name + '.hgt.gz...');
                 var prefix = 'Tile ' + (completed + 1) + '/' + totalTiles + ': ';
-                document.getElementById('downloadStatus').innerText = prefix + '⬇️ Connecting to SRTM server...';
                 var primaryKey = tile.lat + '_' + tile.lon;
                 if (!hgtCache[primaryKey]) {
+                    var cachedBuf = await hgtDbGet(primaryKey);
+                    if (cachedBuf) {
+                        hgtCache[primaryKey] = makeHgtView(new Uint8Array(cachedBuf));
+                        document.getElementById('downloadStatus').innerText = prefix + '✅ Cached ' + name;
+                        appendLog('Using cached ' + name + '.hgt');
+                    } else {
+                    appendLog('Fetching ' + name + '.hgt.gz...');
+                    document.getElementById('downloadStatus').innerText = prefix + '⬇️ Connecting to SRTM server...';
                     var hgtData;
                     try {
                         hgtData = await fetchSrtmTile(tile.lat, tile.lon, function(stage) {
@@ -2068,6 +2188,7 @@
                             document.getElementById('downloadStatus').innerText = prefix + msg;
                         });
                         hgtCache[primaryKey] = makeHgtView(hgtData);
+                        hgtDbPut(primaryKey, hgtData.buffer || hgtData);
                         document.getElementById('downloadStatus').innerText = prefix + '✅ Downloaded ' + name + ' (' + (hgtData.length / 1048576).toFixed(1) + ' MB)';
                         appendLog('Downloaded ' + name + '.hgt (' + (hgtData.length / 1048576).toFixed(1) + ' MB)');
                     } catch (e) {
@@ -2089,15 +2210,22 @@
                         if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
                         return;
                     }
+                    }
                 }
                 var neighbors = [[tile.lat, tile.lon + 1], [tile.lat + 1, tile.lon], [tile.lat + 1, tile.lon + 1]];
                 for (var ni = 0; ni < neighbors.length; ni++) {
                     var nKey = neighbors[ni][0] + '_' + neighbors[ni][1];
                     if (!hgtCache[nKey]) {
+                        var cachedN = await hgtDbGet(nKey);
+                        if (cachedN) {
+                            hgtCache[nKey] = makeHgtView(new Uint8Array(cachedN));
+                        } else {
                         try {
                             var nData = await fetchSrtmTile(neighbors[ni][0], neighbors[ni][1]);
                             hgtCache[nKey] = makeHgtView(nData);
+                            hgtDbPut(nKey, nData.buffer || nData);
                         } catch (e) { /* adjacent tile not available — will clamp at edge */ }
+                        }
                     }
                 }
                 document.getElementById('downloadStatus').innerText = prefix + '⚙️ Converting ' + name + ' to .DAT...';
@@ -2120,6 +2248,7 @@
             }
             // Share downloaded HGT tiles with live altitude readout
             Object.keys(hgtCache).forEach(function(k) { liveAltCache[k] = hgtCache[k]; });
+            updateHgtCacheInfo();
             if (syncAborted || datFiles.length === 0) {
                 if (datFiles.length === 0) {
                     document.getElementById('downloadStatus').innerText = 'No files generated.';
@@ -2265,6 +2394,7 @@
                         continue;
                     }
                     tileCache[hLat + '_' + hLon] = makeHgtView(hgtArr);
+                    hgtDbPut(hLat + '_' + hLon, hgtArr.buffer.slice(hgtArr.byteOffset, hgtArr.byteOffset + hgtArr.byteLength));
                     primaryTiles.push({ lat: hLat, lon: hLon, name: hf.name });
                 }
                 for (var pi = 0; pi < primaryTiles.length; pi++) {
@@ -2283,6 +2413,7 @@
                 }
                 // Share imported HGT tiles with live altitude readout
                 Object.keys(tileCache).forEach(function(k) { liveAltCache[k] = tileCache[k]; });
+                updateHgtCacheInfo();
             }
             if (datFiles.length === 0) {
                 document.getElementById('downloadStatus').innerText = 'No .DAT files generated.';
@@ -2332,7 +2463,7 @@
             }
         }
 
-        function startTerrainSync() {
+        async function startTerrainSync() {
             var layer = drawnItems.getLayers()[0];
             var status = document.getElementById('status');
             if (!layer) {
@@ -2352,6 +2483,24 @@
             var totalSizeMB = tiles.reduce(function(s, t) { return s + estimateDatSizeMB(t.lat); }, 0).toFixed(0);
             var hgtSizeMB = (tiles.length * 13).toFixed(0);
 
+            // Compute all unique HGT keys needed (primaries + neighbors)
+            var hgtKeysSet = new Set();
+            tiles.forEach(function(t) {
+                hgtKeysSet.add(t.lat + '_' + t.lon);
+                hgtKeysSet.add(t.lat + '_' + (t.lon + 1));
+                hgtKeysSet.add((t.lat + 1) + '_' + t.lon);
+                hgtKeysSet.add((t.lat + 1) + '_' + (t.lon + 1));
+            });
+            var totalHgt = hgtKeysSet.size;
+            var cachedSet = await hgtDbCachedSet();
+            var cachedCount = 0;
+            hgtKeysSet.forEach(function(k) { if (cachedSet.has(k)) cachedCount++; });
+            var cacheInfo = cachedCount > 0
+                ? (cachedCount === totalHgt
+                    ? '<span style="color:#87b025;">All ' + totalHgt + ' HGT tiles cached — no download needed</span>'
+                    : cachedCount + ' of ' + totalHgt + ' HGT tiles cached')
+                : '~' + hgtSizeMB + ' MB compressed';
+
             document.getElementById('modalHeader').innerText = 'INAV Terrain Generator';
             document.getElementById('overwriteSection').style.display = sdHandle ? 'flex' : 'none';
             document.getElementById('progressSection').style.display = 'none';
@@ -2360,7 +2509,7 @@
                 '<div class="sync-info-row"><span>Target:</span><span>INAV Terrain (SRTM1 30m)</span></div>' +
                 '<div class="sync-info-row"><span>Terrain Files:</span><span>' + tiles.length + ' .DAT file(s)</span></div>' +
                 '<div class="sync-info-row"><span>Est. Output:</span><span>~' + totalSizeMB + ' MB</span></div>' +
-                '<div class="sync-info-row"><span>SRTM Download:</span><span>~' + hgtSizeMB + ' MB compressed</span></div>' +
+                '<div class="sync-info-row"><span>SRTM Download:</span><span>' + cacheInfo + '</span></div>' +
                 '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + fileList.join(', ') + '</span></div>' +
                 '<div style="margin:10px 0 0 0; font-size:12px; color:#aaa; line-height:1.5;">' +
                 'Source: NASA SRTM 30m elevation data (public domain)<br>' +
