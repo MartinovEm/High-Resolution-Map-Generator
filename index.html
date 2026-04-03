@@ -2514,10 +2514,12 @@
                 '<div style="margin:10px 0 0 0; font-size:12px; color:#aaa; line-height:1.5;">' +
                 'Source: NASA SRTM 30m elevation data (public domain)<br>' +
                 (sdHandle
-                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads SRTM data, converts to .DAT, and writes to FC SD card.'
-                    : '<b style="color:#87b025;">Generate & Download</b> creates a ZIP with .DAT files for your FC SD card.') +
+                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads SRTM data, converts to .DAT, and writes directly to FC SD card.'
+                    : '<b style="color:#ff9800;">No SD Card linked.</b> <b style="color:#87b025;">Generate & Download</b> creates a ZIP with .DAT files. Extract and copy them to the FC SD card root.') +
                 '</div>' +
-                '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f FREESPAC.E will be auto-deleted from SD card during sync. INAV will recreate it on next boot.</div>';
+                (sdHandle
+                    ? '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f FREESPAC.E will be auto-deleted from SD card during sync. INAV will recreate it on next boot.</div>'
+                    : '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f Delete FREESPAC.E from the SD card before copying. INAV will recreate it on next boot.</div>');
 
             var cancelBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
             if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
