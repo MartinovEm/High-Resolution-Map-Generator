@@ -2079,6 +2079,8 @@
             catch (e) { /* OK */ }
             var forceOverwrite = document.getElementById('overwriteToggle').checked;
             appendLog('Writing ' + datFiles.length + ' file(s) to FC SD card...' + (forceOverwrite ? ' (overwrite)' : ' (skip existing)'));
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('downloadStatus').innerText = 'Writing to SD card...';
             var total = datFiles.length, processed = 0, failedCount = 0, skipped = 0;
             for (var i = 0; i < datFiles.length; i++) {
                 if (syncAborted) break;
@@ -2113,6 +2115,7 @@
         async function downloadTerrainZip(datFiles) {
             appendLog('Creating ZIP archive...');
             document.getElementById('downloadStatus').innerText = 'Creating ZIP...';
+            document.getElementById('progressFill').style.width = '0%';
             var zip = new JSZip();
             for (var i = 0; i < datFiles.length; i++) {
                 zip.file(datFiles[i].name, datFiles[i].data);
