@@ -167,7 +167,7 @@
             <select id="targetWidget" onchange="syncMapOptions(); saveSettings();">
                 <option value="b14ckyy">b14ckyy ETHOS Mapping Widget</option>
                 <option value="yaapu">Yaapu</option>
-                <option value="terrain">INAV Terrain (SRTM)</option>
+                <option value="terrain" selected>INAV Terrain (SRTM)</option>
             </select>
         </div>
         <div id="yaapuSubTargetDiv" style="display:none;">
@@ -361,7 +361,7 @@
                 return;
             }
             saveToggle.checked = false;
-            targetWidget.value = 'b14ckyy';
+            targetWidget.value = 'terrain';
             const yaapuSubTargetRestore = document.getElementById('yaapuSubTarget');
             if (yaapuSubTargetRestore) yaapuSubTargetRestore.value = 'FrSkyTelemetryScript';
             provider.value = 'OSM';
