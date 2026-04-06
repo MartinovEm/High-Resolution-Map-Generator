@@ -2,6 +2,8 @@
 
 This is a web-based tool for generating and exporting 100x100 map tiles from high-resolution map providers, designed for RC pilots and hobbyists using **b14ckyy ETHOS Mapping Widget** or **Yaapu mapping widgets** on their radios. It also supports generating **INAV Terrain (SRTM)** elevation data files (.DAT) for INAV flight controllers. It enables quick, straightforward operation by selection of a flying area and direct download of compatible map tiles or terrain files to your SD card or as a ZIP file for later transfer.
 
+⚠️ **You can use the tool online without downloading** by visiting: [https://martinovem.github.io/High-Resolution-Map-Generator/](https://martinovem.github.io/High-Resolution-Map-Generator/)
+
 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/fe00dd94-3e69-469e-9afa-52c2fe8a25a2" />
 
 
