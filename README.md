@@ -92,18 +92,24 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 
 	<img width="1364" height="768" alt="image" src="https://github.com/user-attachments/assets/7e9fd1f6-2f49-4fc1-85fc-4c82db1c14c4" />
 
+	<img width="2560" height="1600" alt="select_area" src="https://github.com/user-attachments/assets/a71b231f-47b7-4775-8517-d51b91eb7c84" />
+
+
 
 
 9. **Edit Area (Optional)**
 
 10. **Sync or Download**
 	 - **For b14ckyy / Yaapu:** Click "Sync to SD Card" to export tiles. If SD card is not connected, a ZIP download will be offered.
-	 - **For INAV Terrain:** Click "Sync to SD Card" to generate `.DAT` files. The tool downloads SRTM elevation data from NASA servers, converts it to `.DAT` format, and writes the files directly to the flight controller SD card root. If no SD card is linked, a ZIP file (`INAV_Terrain_SRTM.zip`) will be offered for download. A 1°×1° grid overlay on the map shows which tiles will be generated. Each tile is approximately 30 MB.
 
 	 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/4f859e99-b11d-4cb8-afb0-a8634ccf848f" />
 
 
 	 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0ffde6b7-4b6e-43f0-9975-ed1528dccd2a" />
+
+	 - **For INAV Terrain:** Click "Sync to SD Card" to generate `.DAT` files. The tool downloads SRTM elevation data from NASA servers, converts it to `.DAT` format, and writes the files directly to the flight controller SD card root. If no SD card is linked, a ZIP file (`INAV_Terrain_SRTM.zip`) will be offered for download. A 1°×1° grid overlay on the map shows which tiles will be generated. Each tile is approximately 30 MB.
+
+	<img width="1366" height="768" alt="generating" src="https://github.com/user-attachments/assets/e71bb8a1-405b-4cfe-b820-d18ec07c480b" />
 
 
 11. **Transfer to Device**
