@@ -183,9 +183,15 @@
                 <option value="OSM" selected>Standard Map (OSM) - Non High-Res</option>
                 <option value="ESRI">ESRI High-Res</option>
                 <option value="GOOGLE">Google High-Res</option>
+                <option value="MAPTILER">MapTiler High-Res</option>
             </select>
         </div>
         <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
+        <div id="maptilerKeyDiv" style="display:none;">
+            <div class="label">MapTiler API Key</div>
+            <input type="text" id="maptilerKey" placeholder="Paste your MapTiler API key" aria-label="MapTiler API Key" oninput="onMaptilerKeyInput();">
+            <div style="font-size:10px; color:#888; margin-top:4px;">Get a free key at <a href="https://www.maptiler.com/" target="_blank" style="color:#87b025;">maptiler.com</a></div>
+        </div>
         <div id="googleWarning" class="google-warning">⚠️ Warning: Google might temporarily ban IPs after bulk downloads for 24 hours.</div>
         <div id="yaapuWarning" class="yaapu-warning"></div>
         <hr id="tileSettingsHr" style="width: 100%; border-color: #333; margin: 5px 0;">
@@ -567,7 +573,7 @@
         }
 
         /* Build the zoom selectors, respecting per-provider max zoom. */
-        const PROVIDER_MAX_ZOOM = { OSM: 19, ESRI: 20, GOOGLE: 20 };
+        const PROVIDER_MAX_ZOOM = { OSM: 19, ESRI: 20, GOOGLE: 20, MAPTILER: 20 };
         const minZSelect = document.getElementById('minZoom'), maxZSelect = document.getElementById('maxZoom');
         function rebuildZoomSelectors(maxZ) {
             const prevMin = parseInt(minZSelect.value) || 8, prevMax = parseInt(maxZSelect.value) || 14;
@@ -607,6 +613,31 @@
         const googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Map data &copy; <a href="https://www.google.com/intl/en/help/terms_maps/">Google</a>' });
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: 'Map data &copy; <a href="https://www.google.com/intl/en/help/terms_maps/">Google</a>' });
         
+        /* MapTiler (requires a user-supplied API key). Map type -> MapTiler style id + image extension. */
+        const maptilerAttribution = '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+        function getMaptilerStyle(mapType) {
+            if (mapType === 'Satellite') return { style: 'satellite', ext: 'jpg' };
+            if (mapType === 'Hybrid') return { style: 'hybrid', ext: 'jpg' };
+            if (mapType === 'Outdoor') return { style: 'outdoor-v2', ext: 'png' };
+            if (mapType === 'Topo') return { style: 'topo-v2', ext: 'png' };
+            if (mapType === 'Winter') return { style: 'winter-v2', ext: 'png' };
+            return { style: 'streets-v2', ext: 'png' };
+        }
+        function getMaptilerKey() { const el = document.getElementById('maptilerKey'); return el ? el.value.trim() : ''; }
+        function buildMaptilerLayer(mapType) {
+            const s = getMaptilerStyle(mapType), key = getMaptilerKey();
+            return L.tileLayer(`https://api.maptiler.com/maps/${s.style}/{z}/{x}/{y}.${s.ext}?key=${key}`, { maxZoom: 20, crossOrigin: true, attribution: maptilerAttribution });
+        }
+        /* The MapTiler key is stored on its own so it persists regardless of Remember Settings and survives Restore Settings. */
+        function loadMaptilerKey() { const saved = localStorage.getItem('maptilerKey'); if (saved) { const el = document.getElementById('maptilerKey'); if (el) el.value = saved; } }
+        function onMaptilerKeyInput() {
+            const el = document.getElementById('maptilerKey');
+            if (el) localStorage.setItem('maptilerKey', el.value.trim());
+            if (document.getElementById('provider').value === 'MAPTILER') switchMapLayer();
+            const status = document.getElementById('status');
+            if (status && status.innerText.startsWith('Error: Please enter your MapTiler')) { status.innerText = ''; status.style.color = ''; }
+        }
+
         /* Start in a safe default mode that does not depend on premium imagery providers. */
         let currentLayer = osmLayer; currentLayer.addTo(map);
 
@@ -624,18 +655,26 @@
             
             let options = '<option value="Satellite">Satellite</option><option value="Street" selected>Street</option>';
             if (provider !== "OSM") options += '<option value="Hybrid">Hybrid (Sat + Labels)</option>';
+            if (provider === "MAPTILER") options += '<option value="Outdoor">Outdoor</option><option value="Topo">Topo</option><option value="Winter">Winter</option>';
             
             typeSelect.innerHTML = provider === "OSM" ? '<option value="Street" selected>Street</option>' : options;
-            gWarning.style.display = (provider === "GOOGLE") ? "block" : "none";
+            gWarning.style.display = (provider === "GOOGLE" && target !== 'terrain') ? "block" : "none";
 
             if (target === 'yaapu' && provider !== "GOOGLE") {
-                yWarning.innerText = `Attention: Yaapu only supports specific folders. Provider ${provider} will be mapped to "Google" folder names.`;
+                let yMsg = `Attention: Yaapu only supports specific folders. Provider ${provider} will be mapped to "Google" folder names.`;
+                if (provider === "MAPTILER") {
+                    yMsg += ` Note: for Yaapu, Street/Outdoor/Topo/Winter all share one "GoogleMap" folder — export only one of them, or they will overwrite each other (Satellite and Hybrid get their own folders).`;
+                }
+                yWarning.innerText = yMsg;
                 yWarning.style.display = "block";
             } else {
                 yWarning.style.display = "none";
             }
             const yaapuSubTargetDiv = document.getElementById('yaapuSubTargetDiv');
             if (yaapuSubTargetDiv) yaapuSubTargetDiv.style.display = (target === 'yaapu') ? 'block' : 'none';
+
+            const maptilerKeyDiv = document.getElementById('maptilerKeyDiv');
+            if (maptilerKeyDiv) maptilerKeyDiv.style.display = (provider === 'MAPTILER' && target !== 'terrain') ? 'block' : 'none';
 
             rebuildZoomSelectors(PROVIDER_MAX_ZOOM[provider] || 20);
             updateTerrainMode();
@@ -698,7 +737,12 @@
             if (currentLayer) map.removeLayer(currentLayer);
             if (map.hasLayer(esriLabels)) map.removeLayer(esriLabels);
 
-            if (type === 'Satellite') { 
+            if (provider === 'MAPTILER') {
+                currentLayer = buildMaptilerLayer(type);
+                if (type === 'Satellite' || type === 'Hybrid') mapContainer.classList.add('dark-contrast-theme');
+                else mapContainer.classList.remove('dark-contrast-theme');
+            }
+            else if (type === 'Satellite') { 
                 currentLayer = (provider === 'ESRI' ? esriSatellite : (provider === 'GOOGLE' ? googleSatellite : osmLayer)); 
                 mapContainer.classList.add('dark-contrast-theme'); 
             }
@@ -1144,6 +1188,10 @@
                 const osmHost = location.protocol === 'file:' ? 'a.tile.openstreetmap.fr/osmfr' : 'tile.openstreetmap.org';
                 return `https://${osmHost}/${z}/${x}/${y}.png`;
             }
+            if (provider === 'MAPTILER') {
+                const s = getMaptilerStyle(mapType), key = getMaptilerKey();
+                return `https://api.maptiler.com/maps/${s.style}/${z}/${x}/${y}.${s.ext}?key=${key}`;
+            }
             if (mapType === 'Satellite') return `https://mt1.google.com/vt/lyrs=s&x=${x}&y=${y}&z=${z}`;
             if (mapType === 'Hybrid') return `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
             return `https://mt1.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}`;
@@ -1334,6 +1382,16 @@
                 if (typeof drawControl !== 'undefined' && drawControl._toolbars && drawControl._toolbars.draw && drawControl._toolbars.draw._modes && drawControl._toolbars.draw._modes.rectangle && drawControl._toolbars.draw._modes.rectangle.handler) {
                     drawControl._toolbars.draw._modes.rectangle.handler.enable();
                 }
+                return;
+            }
+            // If MapTiler is selected but no API key is entered, block sync and prompt for the key
+            if (document.getElementById('provider').value === 'MAPTILER' && !getMaptilerKey()) {
+                if (status) {
+                    status.textContent = 'Error: Please enter your MapTiler API key.';
+                    status.style.color = '#ff5252';
+                }
+                const keyEl = document.getElementById('maptilerKey');
+                if (keyEl) keyEl.focus();
                 return;
             }
             // Restore color for normal status
@@ -1829,7 +1887,8 @@
                 preTerrainZoom = null;
             }
 
-            ['providerDiv', 'mapTypeDiv', 'googleWarning', 'yaapuWarning',
+            // googleWarning/yaapuWarning are managed by syncMapOptions (terrain-aware); do NOT reset them here or they get hidden.
+            ['providerDiv', 'mapTypeDiv',
              'projectNameDiv', 'zoomRowDiv', 'zoomLockDiv', 'tileSettingsHr'].forEach(function(id) {
                 const el = document.getElementById(id);
                 if (el) el.style.display = isTerrain ? 'none' : '';
@@ -2588,6 +2647,7 @@
          */
         window.addEventListener('load', () => {
             syncMapOptions();
+            loadMaptilerKey();
             checkResponsiveMenu();
             updateViewportBottomOffset();
             loadSettings();

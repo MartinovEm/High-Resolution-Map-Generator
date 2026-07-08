@@ -15,11 +15,13 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
   - OSM (OpenStreetMap, standard map, non high-res)
   - ESRI (High-Res Satellite and Street)
   - Google (High-Res Satellite, Street, Hybrid)
+  - MapTiler (High-Res Satellite, Street, Hybrid, Outdoor, Topo, Winter — needs a free API key, entered once)
 
 - **Map Types:**
   - Street
   - Satellite
   - Hybrid (Satellite + Labels, where available)
+  - Outdoor, Topo, Winter (MapTiler only)
 
 ---
 
@@ -79,6 +81,7 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 
 5. **Set Provider and Map Type**
 	- For b14ckyy and Yaapu targets, select the map provider and type.
+	- If you choose **MapTiler**, paste your free MapTiler API key into the box that appears — you only need to enter it once. Get a free key at [maptiler.com](https://www.maptiler.com/).
 	- For INAV Terrain, the map is automatically set to OSM (map tiles are not exported — only elevation data).
 
 6. **Set Zoom Levels**
