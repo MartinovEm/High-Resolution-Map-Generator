@@ -869,7 +869,7 @@
             const maxZoomTiles = calculateTiles(bounds, maxZ, maxZ);
             const status = document.getElementById('status');
             if (status) {
-                let html = `<span style="color:#ffeb3b">Area: ${formatArea(area)}</span><br><span style="color:#87b025">Total Sync Tiles (100x100 PNG): ${tiles.toLocaleString()}</span>`;
+                let html = `<span style="color:#ffeb3b">Area: ${formatArea(area)}</span><br><span style="color:#87b025">Total Sync Tiles (100x100 JPEG): ${tiles.toLocaleString()}</span>`;
                 if (maxZoomTiles < 64) {
                     html += `<br><span style="color:#ff5252">⚠️ Low tile coverage at max zoom (${maxZoomTiles} tiles). Consider increasing max zoom.</span>`;
                 }
@@ -1211,10 +1211,10 @@
             const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
             const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
             if (yaapuSubTarget === 'HorusMappingWidget') {
-                return ["IMAGES", "yaapu", "maps", yaapuMapName, displayZoom, `${y}`, `s_${x}.png`];
+                return ["IMAGES", "yaapu", "maps", yaapuMapName, displayZoom, `${y}`, `s_${x}.jpg`];
             }
             const base = isZipMode ? ["yaapu", "maps"] : ["bitmaps", "yaapu", "maps"];
-            return [...base, yaapuMapName, displayZoom, `${y}`, `s_${x}.png`];
+            return [...base, yaapuMapName, displayZoom, `${y}`, `s_${x}.jpg`];
         }
 
         /* Each worker uses its own canvas to avoid shared-state issues during parallel processing. */
@@ -1227,8 +1227,9 @@
 
         /* Convert a resized tile canvas into a blob for storage or ZIP export. */
         function canvasToBlob(canvas, target) {
-            const mimeType = (target === 'b14ckyy') ? 'image/jpeg' : 'image/png';
-            const quality = (target === 'b14ckyy') ? 0.7 : undefined;
+            // Both b14ckyy and Yaapu widgets read JPEG (.jpg) tiles.
+            const mimeType = 'image/jpeg';
+            const quality = (target === 'b14ckyy') ? 0.7 : 0.8;
             return new Promise((resolve, reject) => {
                 canvas.toBlob(blob => {
                     if (!blob) return reject(new Error('Canvas conversion failed'));
@@ -1428,8 +1429,8 @@
                 const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
                 const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
                 targetPath = yaapuSubTarget === 'HorusMappingWidget'
-                    ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`
-                    : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
+                    ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`
+                    : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`;
             }
 
             const targetDisplayName = target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
@@ -1665,8 +1666,8 @@
                         const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
                         const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
                         targetPath = yaapuSubTarget === 'HorusMappingWidget'
-                            ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`
-                            : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].png`;
+                            ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`
+                            : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`;
                     }
                     // Try to get area and zooms from last sync
                     let areaValue = '';

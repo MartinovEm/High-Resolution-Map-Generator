@@ -43,9 +43,11 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 	 - Output format: JPEG 70% quality
 	 - Output path: `/bitmaps/ethosmaps/maps/{Provider}/{MapType}/{Zoom}/{X or Y}/{Y or X}.jpg`
 	- **[Yaapu - ETHOS](https://github.com/yaapu/EthosMappingWidget/tree/main):**
-	 - Output path: `/bitmaps/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.png`
+	 - Output format: JPEG
+	 - Output path: `/bitmaps/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.jpg`
 	- **[Yaapu - EdgeTX](https://github.com/yaapu/HorusMappingWidget):**
-	 - Output path: `/IMAGES/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.png`
+	 - Output format: JPEG
+	 - Output path: `/IMAGES/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.jpg`
 	 - **Note:** For both Yaapu sub-targets, regardless of the selected provider (including ESRI or OSM), the output folder will always use the "Google" naming convention (`GoogleMap`, `GoogleSatelliteMap`, or `GoogleHybridMap`). This is required for compatibility with the Yaapu widget. For example, if you select ESRI as the provider and Satellite as the map type, the output will still be placed in `.../GoogleSatelliteMap/...` even though the tiles are from ESRI. This applies equally to Yaapu - ETHOS (`/bitmaps/yaapu/maps/...`) and Yaapu - EdgeTX (`/IMAGES/yaapu/maps/...`).
 	- **[INAV Terrain (SRTM)](https://github.com/iNavFlight/inav/wiki/Navigation-Terrain-Following):**
 	 - Generates `.DAT` terrain elevation files for INAV flight controllers
