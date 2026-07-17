@@ -1625,7 +1625,16 @@
             if (syncAborted) return;
 
             pushProgress(true);
-            if (zip && !syncAborted) saveAs(await zip.generateAsync({type: "blob"}), `EthosMaps_${target}.zip`);
+            if (zip && !syncAborted) {
+                const projName = document.getElementById('projectName').value.trim();
+                let targetLabel = 'b14ckyy';
+                if (target === 'yaapu') {
+                    const yst = document.getElementById('yaapuSubTarget');
+                    targetLabel = (yst && yst.value === 'HorusMappingWidget') ? 'Yaapu-EdgeTX' : 'Yaapu-ETHOS';
+                }
+                const safeName = projName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'MapTiles';
+                saveAs(await zip.generateAsync({type: "blob"}), `${safeName}_${targetLabel}.zip`);
+            }
             if (!syncAborted) {
                 if (failedCount > 0) {
                     document.getElementById('downloadStatus').innerText = `Completed with ${failedCount} failed tile(s).`;
