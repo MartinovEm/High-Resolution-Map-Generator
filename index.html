@@ -1286,7 +1286,7 @@
         async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, target) {
             const img = await loadImage(getTileUrl(provider, mapType, z, x, y));
             ctx.clearRect(0, 0, 100, 100);
-            ctx.drawImage(img, 0, 0, 256, 256, 0, 0, 100, 100);
+            ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, 0, 0, 100, 100);
             if (provider === 'ESRI' && mapType === 'Hybrid') {
                 const labelUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/${z}/${y}/${x}`;
                 try {
