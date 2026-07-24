@@ -620,7 +620,7 @@
             if (mapType === 'Hybrid') return { style: 'hybrid', ext: 'jpg' };
             if (mapType === 'Outdoor') return { style: 'outdoor-v2', ext: 'png' };
             if (mapType === 'Topo') return { style: 'topo-v2', ext: 'png' };
-            if (mapType === 'Winter') return { style: 'winter-v2', ext: 'png' };
+            if (mapType === 'Winter') return { style: 'winter-v4', ext: 'png' };
             return { style: 'streets-v2', ext: 'png' };
         }
         function getMaptilerKey() { const el = document.getElementById('maptilerKey'); return el ? el.value.trim() : ''; }
