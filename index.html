@@ -167,7 +167,7 @@
             <select id="targetWidget" onchange="syncMapOptions(); saveSettings();">
                 <option value="b14ckyy">b14ckyy ETHOS Mapping Widget</option>
                 <option value="yaapu">Yaapu</option>
-                <option value="terrain">INAV Terrain (SRTM)</option>
+                <option value="terrain">Terrain</option>
             </select>
         </div>
         <div id="yaapuSubTargetDiv" style="display:none;">
@@ -185,6 +185,14 @@
                 <option value="GOOGLE">Google High-Res</option>
                 <option value="MAPTILER">MapTiler High-Res</option>
             </select>
+        </div>
+        <div id="terrainSourceDiv" style="display:none;">
+            <div class="label">Provider</div>
+            <select id="terrainSource" onchange="onTerrainSourceChange(); saveSettings();">
+                <option value="reearth" selected>Re:Earth</option>
+                <option value="srtm">Mapzen (NASA) SRTM</option>
+            </select>
+            <div id="terrainSourceNote" style="font-size:10px; color:#888; margin-top:4px; line-height:1.45;"></div>
         </div>
         <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
         <div id="maptilerKeyDiv" style="display:none;">
@@ -211,7 +219,7 @@
         <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One .DAT file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.</div>
 
         <div id="terrainAltDiv" class="toggle-container" style="display:none;"><span class="label" style="margin:0;">📍 Live Altitude</span><label class="switch"><input type="checkbox" id="terrainAltToggle" onchange="toggleLiveAlt()"><span class="slider"></span></label></div>
-        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude available after generating .DAT files — uses locally cached SRTM data to avoid unnecessary server requests.</div>
+        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude available after generating .DAT files — uses locally cached elevation data to avoid unnecessary server requests.</div>
 
         <div id="zoomLockDiv" class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
         <div id="syncDock">
@@ -304,6 +312,7 @@
                 mapCenter: map.getCenter(),
                 mapZoom: map.getZoom(),
                 yaapuSubTarget: document.getElementById('yaapuSubTarget') ? document.getElementById('yaapuSubTarget').value : 'FrSkyTelemetryScript',
+                terrainSource: document.getElementById('terrainSource') ? document.getElementById('terrainSource').value : 'reearth',
                 rememberOn: true
             };
             localStorage.setItem('mapGenSettings', JSON.stringify(settings));
@@ -331,6 +340,7 @@
             }
             if(s.targetWidget) targetWidget.value = s.targetWidget;
             if(s.provider) provider.value = s.provider;
+            if(s.terrainSource) { const tsEl = document.getElementById('terrainSource'); if(tsEl) tsEl.value = s.terrainSource; }
             syncMapOptions();
             if(s.yaapuSubTarget) { const el = document.getElementById('yaapuSubTarget'); if(el) el.value = s.yaapuSubTarget; }
             if(s.mapType) mapTypeChoice.value = s.mapType;
@@ -371,6 +381,8 @@
             const yaapuSubTargetRestore = document.getElementById('yaapuSubTarget');
             if (yaapuSubTargetRestore) yaapuSubTargetRestore.value = 'FrSkyTelemetryScript';
             provider.value = 'OSM';
+            const terrainSourceRestore = document.getElementById('terrainSource');
+            if (terrainSourceRestore) terrainSourceRestore.value = 'reearth';
             syncMapOptions();
             mapTypeChoice.value = 'Street';
             projectName.value = 'MyLocalField';
@@ -1100,7 +1112,7 @@
             try {
                 var cached = await hgtDbCachedSet();
                 if (cached.size > 0 && isTerrainMode()) {
-                    el.textContent = '🗑️ Clear HGT Cache (' + cached.size + ' tile' + (cached.size > 1 ? 's' : '') + ', ~' + (cached.size * 25) + ' MB)';
+                    el.textContent = '🗑️ Clear Elevation Cache (' + cached.size + ' grid' + (cached.size > 1 ? 's' : '') + ', ~' + (cached.size * 25) + ' MB)';
                     btn.style.display = '';
                 } else {
                     btn.style.display = 'none';
@@ -1109,12 +1121,12 @@
         }
         async function clearHgtCacheUI() {
             var cached = await hgtDbCachedSet();
-            if (cached.size === 0) { showMiniModal('HGT cache is empty.'); return; }
-            showMiniModal('Clear ' + cached.size + ' cached HGT tile(s) (~' + (cached.size * 25) + ' MB)?', async function() {
+            if (cached.size === 0) { showMiniModal('Elevation cache is empty.'); return; }
+            showMiniModal('Clear ' + cached.size + ' cached elevation grid(s) (~' + (cached.size * 25) + ' MB)?', async function() {
                 await hgtDbClear();
                 liveAltCache = {};
                 updateHgtCacheInfo();
-                showMiniModal('HGT cache cleared.');
+                showMiniModal('Elevation cache cleared.');
             });
         }
 
@@ -1862,7 +1874,7 @@
                 '<span style="color:#ffeb3b">Grid Coverage: ' + tiles.length + ' tile(s) · ' + formatArea(gridAreaSqM) + '</span><br>' +
                 '<span style="color:#87b025">Est. Size: ~' + estSizeMB + ' MB</span><br>' +
                 '<span style="color:#aaa; font-size:11px">' + fileList.join(', ') + '</span>';
-            if (bounds.getNorth() > 60 || bounds.getSouth() < -56) {
+            if (getTerrainSource() === 'srtm' && (bounds.getNorth() > 60 || bounds.getSouth() < -56)) {
                 status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond SRTM coverage (60°N to 56°S). Tiles outside this range will have no elevation data.</span>';
             }
         }
@@ -1882,11 +1894,10 @@
             lastTargetCategory = currentCategory;
             document.getElementById('linkSDBtn').innerText = getSDButtonLabel(!!sdHandle);
 
-            var srtmAttr = 'Elevation data: <a href="https://www.usgs.gov/centers/eros/science/usgs-eros-archive-digital-elevation-shuttle-radar-topography-mission-srtm-1">NASA SRTM</a>';
             if (isTerrain) {
-                map.attributionControl.addAttribution(srtmAttr);
+                updateTerrainSourceUI();
             } else {
-                map.attributionControl.removeAttribution(srtmAttr);
+                removeTerrainAttributions();
             }
 
             if (isTerrain && preTerrainZoom === null) {
@@ -1905,6 +1916,7 @@
             });
             document.getElementById('hintMapTiles').style.display = isTerrain ? 'none' : '';
             document.getElementById('hintTerrain').style.display = isTerrain ? '' : 'none';
+            document.getElementById('terrainSourceDiv').style.display = isTerrain ? '' : 'none';
             document.getElementById('terrainAltDiv').style.display = isTerrain ? '' : 'none';
             if (!isTerrain) { document.getElementById('terrainAltToggle').checked = false; toggleLiveAlt(); }
             if (isTerrain) {
@@ -1928,6 +1940,49 @@
             if (drawnItems.getLayers().length > 0) updateSideLabels(drawnItems.getLayers()[0]);
             if (isTerrain) { updateTerrainStatus(); updateHgtCacheInfo(); }
             else { var ccb = document.getElementById('clearCacheBtn'); if (ccb) ccb.style.display = 'none'; }
+        }
+
+        // ===== TERRAIN ELEVATION SOURCE (Re:Earth primary / Mapzen SRTM fallback) =====
+        var TERRAIN_ATTR_SRTM = 'Elevation data: <a href="https://www.usgs.gov/centers/eros/science/usgs-eros-archive-digital-elevation-shuttle-radar-topography-mission-srtm-1">NASA SRTM</a>';
+        var TERRAIN_ATTR_REEARTH = 'Elevation data: <a href="https://terrain.reearth.land/" target="_blank">Re:Earth Terrain</a> · <a href="https://mapterhorn.com/attribution/" target="_blank">Mapterhorn</a> (CC BY 4.0)';
+        var COPERNICUS_NOTICE_1 = 'produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved';
+        var COPERNICUS_NOTICE_2 = 'The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30';
+
+        function getTerrainSource() {
+            var el = document.getElementById('terrainSource');
+            return (el && el.value === 'srtm') ? 'srtm' : 'reearth';
+        }
+
+        function terrainSourceLabel() {
+            return getTerrainSource() === 'srtm' ? 'Terrain — SRTM1 (30m)' : 'Terrain — Re:Earth (30m)';
+        }
+
+        function removeTerrainAttributions() {
+            map.attributionControl.removeAttribution(TERRAIN_ATTR_SRTM);
+            map.attributionControl.removeAttribution(TERRAIN_ATTR_REEARTH);
+        }
+
+        function updateTerrainSourceUI() {
+            var note = document.getElementById('terrainSourceNote');
+            var hint = document.getElementById('hintTerrain');
+            removeTerrainAttributions();
+            if (getTerrainSource() === 'srtm') {
+                map.attributionControl.addAttribution(TERRAIN_ATTR_SRTM);
+                if (note) note.innerHTML = 'Coverage up to ~60°N';
+                if (hint) hint.innerText = 'Hint: One .DAT file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.';
+            } else {
+                map.attributionControl.addAttribution(TERRAIN_ATTR_REEARTH);
+                if (note) note.innerHTML = 'Global coverage incl. &gt;60°N<br>' +
+                    'Re:Earth Terrain · Mapterhorn (CC BY 4.0)<br>' +
+                    '<span style="color:#ff9800;">Data provided as-is — verify terrain clearance before flight.</span>' +
+                    '<div style="font-size:9px; color:#666; margin-top:3px;">' + COPERNICUS_NOTICE_1 + '. ' + COPERNICUS_NOTICE_2 + '.</div>';
+                if (hint) hint.innerText = 'Hint: One .DAT file per 1°×1° grid square (~111 km). Data: Re:Earth Terrain (Copernicus-based) at 30m resolution. Ocean depths are clamped to 0m.';
+            }
+        }
+
+        function onTerrainSourceChange() {
+            updateTerrainSourceUI();
+            updateTerrainStatus();
         }
 
         // ===== SRTM HGT → DAT CONVERSION ENGINE =====
@@ -2137,6 +2192,230 @@
             }
         }
 
+        // ===== RE:EARTH TERRARIUM → GRID ENGINE =====
+        // Fetches Re:Earth terrarium PNG tiles (512px), decodes elevation per pixel and
+        // resamples each 1°×1° cell onto the same 3601×3601 big-endian int16 grid the
+        // SRTM path uses, so hgtElevation/createDatFromHgt work unchanged.
+        const REEARTH_BASE_URL = 'https://terrain.reearth.land/terrarium/elevation';
+        const REEARTH_TILE_PX = 512;
+        const REEARTH_CONCURRENCY = 2;
+        const REEARTH_FETCH_DELAY_MS = 150;
+        var reearthDecodeCanvas = null;
+
+        function reearthZoom(lat) {
+            return Math.abs(lat) < 40 ? 12 : 11;
+        }
+
+        function lonToPixelX(lon, z) {
+            return (lon + 180) / 360 * (1 << z) * REEARTH_TILE_PX;
+        }
+
+        function latToPixelY(lat, z) {
+            var s = Math.sin(lat * Math.PI / 180);
+            s = Math.max(-0.9999, Math.min(0.9999, s));
+            return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * (1 << z) * REEARTH_TILE_PX;
+        }
+
+        async function fetchReearthTile(z, x, y) {
+            var n = 1 << z;
+            x = ((x % n) + n) % n;
+            if (y < 0 || y >= n) throw new Error('tile row out of range');
+            var resp = await fetch(REEARTH_BASE_URL + '/' + z + '/' + x + '/' + y + '.png');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var blob = await resp.blob();
+            var bmp = await createImageBitmap(blob);
+            if (!reearthDecodeCanvas) {
+                reearthDecodeCanvas = document.createElement('canvas');
+                reearthDecodeCanvas.width = REEARTH_TILE_PX;
+                reearthDecodeCanvas.height = REEARTH_TILE_PX;
+            }
+            var ctx = reearthDecodeCanvas.getContext('2d', { willReadFrequently: true });
+            ctx.clearRect(0, 0, REEARTH_TILE_PX, REEARTH_TILE_PX);
+            ctx.drawImage(bmp, 0, 0, REEARTH_TILE_PX, REEARTH_TILE_PX);
+            if (bmp.close) bmp.close();
+            var px = ctx.getImageData(0, 0, REEARTH_TILE_PX, REEARTH_TILE_PX).data;
+            var out = new Int16Array(REEARTH_TILE_PX * REEARTH_TILE_PX);
+            for (var i = 0, j = 0; i < out.length; i++, j += 4) {
+                var e = px[j] * 256 + px[j + 1] + px[j + 2] / 256 - 32768;
+                if (e < -32767) e = -32767; else if (e > 32767) e = 32767;
+                out[i] = Math.round(e);
+            }
+            return out;
+        }
+
+        function reearthTilesForRects(z, rects) {
+            var maxPx = (1 << z) * REEARTH_TILE_PX - 1;
+            var seen = {}, list = [];
+            rects.forEach(function(rect) {
+                var txMin = Math.floor(Math.max(0, rect[0]) / REEARTH_TILE_PX);
+                var txMax = Math.floor(Math.min(maxPx, rect[1]) / REEARTH_TILE_PX);
+                var tyMin = Math.floor(Math.max(0, rect[2]) / REEARTH_TILE_PX);
+                var tyMax = Math.floor(Math.min(maxPx, rect[3]) / REEARTH_TILE_PX);
+                for (var ty = tyMin; ty <= tyMax; ty++) {
+                    for (var tx = txMin; tx <= txMax; tx++) {
+                        var key = tx + '_' + ty;
+                        if (!seen[key]) { seen[key] = true; list.push({ x: tx, y: ty }); }
+                    }
+                }
+            });
+            return list;
+        }
+
+        async function reearthFetchTileSet(z, tileList, tileMap, statusCb) {
+            var idx = 0, done = 0, firstError = null;
+            async function worker() {
+                while (true) {
+                    if (syncAborted || firstError) return;
+                    var my = idx++;
+                    if (my >= tileList.length) return;
+                    var t = tileList[my];
+                    var ok = false, lastErr = null;
+                    for (var attempt = 0; attempt <= MAX_TILE_RETRIES && !ok; attempt++) {
+                        if (syncAborted) return;
+                        try {
+                            if (attempt > 0) await new Promise(function(r) { setTimeout(r, 300 * (attempt + 1)); });
+                            tileMap[t.x + '_' + t.y] = await fetchReearthTile(z, t.x, t.y);
+                            ok = true;
+                        } catch (e) { lastErr = e; }
+                    }
+                    if (!ok) { firstError = lastErr || new Error('tile fetch failed'); return; }
+                    done++;
+                    if (statusCb) statusCb(done, tileList.length);
+                    await new Promise(function(r) { setTimeout(r, REEARTH_FETCH_DELAY_MS); });
+                }
+            }
+            var workers = [];
+            for (var w = 0; w < REEARTH_CONCURRENCY; w++) workers.push(worker());
+            await Promise.all(workers);
+            if (syncAborted) throw new Error('ABORTED');
+            if (firstError) throw firstError;
+        }
+
+        function makeReearthSampler(z, tileMap, rect) {
+            var maxPx = (1 << z) * REEARTH_TILE_PX - 1;
+            var xMin = Math.max(0, Math.floor(rect[0])), xMax = Math.min(maxPx, Math.floor(rect[1]));
+            var yMin = Math.max(0, Math.floor(rect[2])), yMax = Math.min(maxPx, Math.floor(rect[3]));
+            var lastKey = null, lastTile = null;
+            function pixel(x, y) {
+                if (x < xMin) x = xMin; else if (x > xMax) x = xMax;
+                if (y < yMin) y = yMin; else if (y > yMax) y = yMax;
+                var tx = (x / REEARTH_TILE_PX) | 0, ty = (y / REEARTH_TILE_PX) | 0;
+                var key = tx + '_' + ty;
+                if (key !== lastKey) { lastKey = key; lastTile = tileMap[key] || null; }
+                if (!lastTile) return 0;
+                return lastTile[(y - ty * REEARTH_TILE_PX) * REEARTH_TILE_PX + (x - tx * REEARTH_TILE_PX)];
+            }
+            return function(xp, yp) {
+                var x0 = Math.floor(xp - 0.5), y0 = Math.floor(yp - 0.5);
+                var fx = xp - 0.5 - x0, fy = yp - 0.5 - y0;
+                var v00 = pixel(x0, y0), v10 = pixel(x0 + 1, y0), v01 = pixel(x0, y0 + 1), v11 = pixel(x0 + 1, y0 + 1);
+                return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
+            };
+        }
+
+        async function fillReearthGridRegion(view, originLat, originLon, r0, r1, c0, c1, z, elevAt, progressCb) {
+            var xBase = lonToPixelX(originLon, z);
+            var xWidth = lonToPixelX(originLon + 1, z) - xBase;
+            for (var r = r0; r <= r1; r++) {
+                var yp = latToPixelY(originLat + 1 - r / 3600, z);
+                for (var c = c0; c <= c1; c++) {
+                    var e = Math.round(elevAt(xBase + (c / 3600) * xWidth, yp));
+                    if (e < -32767) e = -32767; else if (e > 32767) e = 32767;
+                    view.setInt16((r * SRTM_GRID + c) * 2, e, false);
+                }
+                if (((r - r0) & 63) === 0) {
+                    if (progressCb) progressCb(r - r0, r1 - r0 + 1);
+                    await new Promise(function(res) { setTimeout(res, 0); });
+                }
+            }
+        }
+
+        /*
+         * Returns a tileCache for createDatFromHgt covering one 1°×1° cell: a full primary
+         * grid (reused from the run cache / IndexedDB, or built from Re:Earth tiles) plus
+         * E/N/NE neighbor data for edge interpolation. Full neighbor grids are used when
+         * available; otherwise thin edge strips are built from the same tile download.
+         * Partial (strip) grids stay local to this cell — never stored in runCache or
+         * IndexedDB, so they can't be mistaken for full grids later.
+         */
+        async function ensureReearthCellData(degLat, degLon, runCache, statusCb) {
+            var primaryKey = degLat + '_' + degLon;
+            var neighborDefs = [
+                { key: degLat + '_' + (degLon + 1), part: 'east' },
+                { key: (degLat + 1) + '_' + degLon, part: 'north' },
+                { key: (degLat + 1) + '_' + (degLon + 1), part: 'northeast' }
+            ];
+            if (!runCache[primaryKey]) {
+                var cachedBuf = await hgtDbGet('re_' + primaryKey);
+                if (cachedBuf) {
+                    runCache[primaryKey] = makeHgtView(new Uint8Array(cachedBuf));
+                    appendLog('Using cached Re:Earth grid ' + srtmTileName(degLat, degLon));
+                }
+            }
+            for (var i = 0; i < neighborDefs.length; i++) {
+                if (!runCache[neighborDefs[i].key]) {
+                    var nBuf = await hgtDbGet('re_' + neighborDefs[i].key);
+                    if (nBuf) runCache[neighborDefs[i].key] = makeHgtView(new Uint8Array(nBuf));
+                }
+            }
+            var cellCache = {};
+            if (runCache[primaryKey]) cellCache[primaryKey] = runCache[primaryKey];
+            neighborDefs.forEach(function(n) { if (runCache[n.key]) cellCache[n.key] = runCache[n.key]; });
+            var needPrimary = !cellCache[primaryKey];
+            var missingNeighbors = neighborDefs.filter(function(n) { return !cellCache[n.key]; });
+            if (!needPrimary && missingNeighbors.length === 0) return cellCache;
+
+            var z = reearthZoom(degLat + 0.5);
+            var xLeft = lonToPixelX(degLon, z), xRight = lonToPixelX(degLon + 1, z);
+            var yTop = latToPixelY(degLat + 1, z), yBottom = latToPixelY(degLat, z);
+            var latMarginDeg = 1200 / 111320;
+            var lonMarginDeg = 2500 / (111320 * Math.max(0.05, Math.cos((degLat + 0.5) * Math.PI / 180)));
+            var xRightM = lonToPixelX(degLon + 1 + lonMarginDeg, z);
+            var yTopM = latToPixelY(degLat + 1 + latMarginDeg, z);
+            var primRect = [xLeft - 2, xRight + 2, yTop - 2, yBottom + 2];
+            var northRect = [xLeft - 2, xRightM + 2, yTopM - 2, yTop + 2];
+            var eastRect = [xRight - 2, xRightM + 2, yTopM - 2, yBottom + 2];
+            var rects = [];
+            if (needPrimary) rects.push(primRect);
+            if (missingNeighbors.length) { rects.push(northRect); rects.push(eastRect); }
+            var tileList = reearthTilesForRects(z, rects);
+            var tileMap = {};
+            await reearthFetchTileSet(z, tileList, tileMap, function(done, total) {
+                if (statusCb) statusCb('tiles', done, total);
+            });
+
+            if (needPrimary) {
+                var primBytes = new Uint8Array(SRTM_GRID * SRTM_GRID * 2);
+                var primView = new DataView(primBytes.buffer);
+                await fillReearthGridRegion(primView, degLat, degLon, 0, 3600, 0, 3600, z,
+                    makeReearthSampler(z, tileMap, primRect),
+                    function(done, total) { if (statusCb) statusCb('grid', done, total); });
+                runCache[primaryKey] = primView;
+                cellCache[primaryKey] = primView;
+                hgtDbPut('re_' + primaryKey, primBytes.buffer);
+                appendLog('Built Re:Earth grid ' + srtmTileName(degLat, degLon) + ' from ' + tileList.length + ' tiles (z' + z + ')');
+            }
+            if (missingNeighbors.length) {
+                var rowStart = Math.max(0, 3600 - Math.ceil(latMarginDeg * 3600) - 2);
+                var colEnd = Math.min(3600, Math.ceil(lonMarginDeg * 3600) + 2);
+                var northSampler = makeReearthSampler(z, tileMap, northRect);
+                var eastSampler = makeReearthSampler(z, tileMap, eastRect);
+                for (var m = 0; m < missingNeighbors.length; m++) {
+                    var nb = missingNeighbors[m];
+                    var partView = new DataView(new ArrayBuffer(SRTM_GRID * SRTM_GRID * 2));
+                    if (nb.part === 'east') {
+                        await fillReearthGridRegion(partView, degLat, degLon + 1, 0, 3600, 0, colEnd, z, eastSampler, null);
+                    } else if (nb.part === 'north') {
+                        await fillReearthGridRegion(partView, degLat + 1, degLon, rowStart, 3600, 0, 3600, z, northSampler, null);
+                    } else {
+                        await fillReearthGridRegion(partView, degLat + 1, degLon + 1, rowStart, 3600, 0, colEnd, z, eastSampler, null);
+                    }
+                    cellCache[nb.key] = partView;
+                }
+            }
+            return cellCache;
+        }
+
         async function writeTerrainToSD(datFiles, startTime) {
             try {
                 var perm = await sdHandle.queryPermission({ mode: 'readwrite' });
@@ -2209,7 +2488,19 @@
             document.getElementById('downloadStatus').innerText = 'Creating ZIP...';
             document.getElementById('progressFill').style.width = '0%';
             var zipStart = Date.now();
+            var isReearthZip = getTerrainSource() === 'reearth';
+            var zipName = isReearthZip ? 'INAV_Terrain_ReEarth.zip' : 'INAV_Terrain_SRTM.zip';
             var zip = new JSZip();
+            if (isReearthZip) {
+                zip.file('NOTICE.txt',
+                    'INAV Terrain elevation data — attribution notice\r\n\r\n' +
+                    'Elevation source: Re:Earth Terrain (https://terrain.reearth.land/) · Mapterhorn (CC BY 4.0)\r\n' +
+                    'Full source attribution: https://mapterhorn.com/attribution/\r\n\r\n' +
+                    COPERNICUS_NOTICE_1 + '\r\n\r\n' +
+                    COPERNICUS_NOTICE_2 + '\r\n\r\n' +
+                    'Elevation data is provided "as is", on a best-effort basis, without any warranty.\r\n' +
+                    'Always verify terrain clearance before flight.\r\n');
+            }
             for (var i = 0; i < datFiles.length; i++) {
                 zip.file(datFiles[i].name, datFiles[i].data);
             }
@@ -2224,8 +2515,8 @@
                     document.getElementById('downloadStatus').innerText = 'Creating ZIP... ' + pct.toFixed(0) + '% (' + mins + ':' + secs.toString().padStart(2, '0') + ' remaining)';
                 }
             });
-            saveAs(blob, 'INAV_Terrain_SRTM.zip');
-            appendLog('ZIP downloaded: INAV_Terrain_SRTM.zip');
+            saveAs(blob, zipName);
+            appendLog('ZIP downloaded: ' + zipName);
             showTerrainComplete(datFiles.length, 0);
         }
 
@@ -2252,6 +2543,32 @@
             if (impBtn) impBtn.style.display = 'none';
         }
 
+        /*
+         * Re:Earth is best-effort community hosting — if it can't be reached, ask the user
+         * before falling back to SRTM. Never switch elevation sources silently.
+         */
+        function showReearthFallbackPrompt(tiles) {
+            document.getElementById('downloadStatus').innerText = 'Re:Earth server unavailable.';
+            document.getElementById('modalActions').style.display = 'flex';
+            document.getElementById('syncInfo').innerHTML =
+                '<div style="color:#aaa; font-size:13px; line-height:1.6; margin:8px 0;">' +
+                '<b style="color:#ff9800;">Re:Earth is unavailable</b> (server unreachable or throttling).<br><br>' +
+                'You can switch this generation to the <b>Mapzen (NASA) SRTM</b> fallback source (coverage up to ~60°N), or close and try Re:Earth again later.' +
+                '</div>';
+            var mainBtn = document.getElementById('mainConfirmBtn');
+            mainBtn.innerText = '↺ Switch to SRTM & Retry';
+            mainBtn.className = 'btn-confirm';
+            mainBtn.style.display = 'block';
+            mainBtn.onclick = function() {
+                document.getElementById('terrainSource').value = 'srtm';
+                onTerrainSourceChange();
+                saveSettings();
+                terrainGenerateAndSync(tiles);
+            };
+            var cancelBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
+            if (cancelBtn) { cancelBtn.innerText = 'Close'; cancelBtn.onclick = closeSync; cancelBtn.style.display = 'block'; }
+        }
+
         async function terrainGenerateAndSync(tiles) {
             syncAborted = false;
             clearLog();
@@ -2273,6 +2590,22 @@
                 var tile = tiles[ti];
                 var name = srtmTileName(tile.lat, tile.lon);
                 var prefix = 'Tile ' + (completed + 1) + '/' + totalTiles + ': ';
+                var cellCache = hgtCache;
+                if (getTerrainSource() === 'reearth') {
+                    try {
+                        cellCache = await ensureReearthCellData(tile.lat, tile.lon, hgtCache, function(kind, done, total) {
+                            document.getElementById('downloadStatus').innerText = prefix +
+                                (kind === 'tiles'
+                                    ? '⬇️ Re:Earth elevation tiles ' + done + '/' + total + '...'
+                                    : '🧮 Building ' + name + ' grid (' + Math.round(done / total * 100) + '%)');
+                        });
+                    } catch (e) {
+                        if (syncAborted) break;
+                        appendLog('Re:Earth fetch failed: ' + e.message, true);
+                        showReearthFallbackPrompt(tiles);
+                        return;
+                    }
+                } else {
                 var primaryKey = tile.lat + '_' + tile.lon;
                 if (!hgtCache[primaryKey]) {
                     var cachedBuf = await hgtDbGet(primaryKey);
@@ -2332,12 +2665,13 @@
                         }
                     }
                 }
+                }
                 document.getElementById('downloadStatus').innerText = prefix + '⚙️ Converting ' + name + ' to .DAT...';
                 try {
                     var capCompleted = completed;
                     var capPrefix = prefix;
                     var capName = name;
-                    var datData = await createDatFromHgt(tile.lat, tile.lon, hgtCache, function(done, total) {
+                    var datData = await createDatFromHgt(tile.lat, tile.lon, cellCache, function(done, total) {
                         var pct = ((capCompleted + done / total) / totalTiles * 100).toFixed(0);
                         document.getElementById('progressFill').style.width = pct + '%';
                         document.getElementById('downloadStatus').innerText = capPrefix + '⚙️ Converting ' + capName + ' (' + Math.round(done / total * 100) + '%)';
@@ -2376,7 +2710,7 @@
                 var totalSizeMB = datFiles.reduce(function(s, f) { return s + f.data.length; }, 0) / 1048576;
                 document.getElementById('modalHeader').innerText = 'Writing to SD Card...';
                 document.getElementById('syncInfo').innerHTML =
-                    '<div class="sync-info-row"><span>Target:</span><span>INAV Terrain (SRTM1 30m)</span></div>' +
+                    '<div class="sync-info-row"><span>Target:</span><span>' + terrainSourceLabel() + '</span></div>' +
                     '<div class="sync-info-row"><span>Terrain Files:</span><span>' + datFiles.length + ' .DAT file(s)</span></div>' +
                     '<div class="sync-info-row"><span>Total Size:</span><span>~' + totalSizeMB.toFixed(0) + ' MB</span></div>' +
                     '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + datFiles.map(function(f) { return f.name; }).join(', ') + '</span></div>' +
@@ -2593,40 +2927,49 @@
             var tiles = getTerrainDegreeTiles(bounds);
             var fileList = tiles.map(function(t) { return terrainDatFilename(t.lat, t.lon); });
             var totalSizeMB = tiles.reduce(function(s, t) { return s + estimateDatSizeMB(t.lat); }, 0).toFixed(0);
-            var hgtSizeMB = (tiles.length * 13).toFixed(0);
+            var source = getTerrainSource();
+            var hgtSizeMB = (tiles.length * (source === 'reearth' ? 25 : 13)).toFixed(0);
 
-            // Compute all unique HGT keys needed (primaries + neighbors)
+            // Grids needed for the download estimate. SRTM downloads whole neighbor tiles
+            // too; Re:Earth fetches only thin edge strips for neighbors, so its estimate
+            // counts the primary grids alone.
             var hgtKeysSet = new Set();
             tiles.forEach(function(t) {
                 hgtKeysSet.add(t.lat + '_' + t.lon);
-                hgtKeysSet.add(t.lat + '_' + (t.lon + 1));
-                hgtKeysSet.add((t.lat + 1) + '_' + t.lon);
-                hgtKeysSet.add((t.lat + 1) + '_' + (t.lon + 1));
+                if (source !== 'reearth') {
+                    hgtKeysSet.add(t.lat + '_' + (t.lon + 1));
+                    hgtKeysSet.add((t.lat + 1) + '_' + t.lon);
+                    hgtKeysSet.add((t.lat + 1) + '_' + (t.lon + 1));
+                }
             });
             var totalHgt = hgtKeysSet.size;
             var cachedSet = await hgtDbCachedSet();
             var cachedCount = 0;
-            hgtKeysSet.forEach(function(k) { if (cachedSet.has(k)) cachedCount++; });
+            hgtKeysSet.forEach(function(k) { if (cachedSet.has(source === 'reearth' ? 're_' + k : k)) cachedCount++; });
             var cacheInfo = cachedCount > 0
                 ? (cachedCount === totalHgt
-                    ? '<span style="color:#87b025;">All ' + totalHgt + ' HGT tiles cached — no download needed</span>'
-                    : cachedCount + ' of ' + totalHgt + ' HGT tiles cached')
-                : '~' + hgtSizeMB + ' MB compressed';
+                    ? '<span style="color:#87b025;">All ' + totalHgt + ' elevation grid(s) cached — little or no download needed</span>'
+                    : cachedCount + ' of ' + totalHgt + ' elevation grid(s) cached')
+                : '~' + hgtSizeMB + ' MB' + (source === 'reearth' ? '' : ' compressed');
 
             document.getElementById('modalHeader').innerText = 'INAV Terrain Generator';
             document.getElementById('overwriteSection').style.display = sdHandle ? 'flex' : 'none';
             document.getElementById('progressSection').style.display = 'none';
             document.getElementById('modalActions').style.display = 'flex';
             document.getElementById('syncInfo').innerHTML =
-                '<div class="sync-info-row"><span>Target:</span><span>INAV Terrain (SRTM1 30m)</span></div>' +
+                '<div class="sync-info-row"><span>Target:</span><span>' + terrainSourceLabel() + '</span></div>' +
                 '<div class="sync-info-row"><span>Terrain Files:</span><span>' + tiles.length + ' .DAT file(s)</span></div>' +
                 '<div class="sync-info-row"><span>Est. Output:</span><span>~' + totalSizeMB + ' MB</span></div>' +
-                '<div class="sync-info-row"><span>SRTM Download:</span><span>' + cacheInfo + '</span></div>' +
+                '<div class="sync-info-row"><span>Elevation Data:</span><span>' + cacheInfo + '</span></div>' +
                 '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + fileList.join(', ') + '</span></div>' +
                 '<div style="margin:10px 0 0 0; font-size:12px; color:#aaa; line-height:1.5;">' +
-                'Source: NASA SRTM 30m elevation data (public domain)<br>' +
+                (source === 'reearth'
+                    ? 'Source: Re:Earth Terrain · Mapterhorn (CC BY 4.0) — Copernicus-based, 30m<br>' +
+                      '<span style="color:#ff9800;">Best-effort service — data as-is; verify terrain clearance before flight.</span><br>' +
+                      '<span style="font-size:9px; color:#777;">' + COPERNICUS_NOTICE_1 + '. ' + COPERNICUS_NOTICE_2 + '.</span><br>'
+                    : 'Source: NASA SRTM 30m elevation data (public domain)<br>') +
                 (sdHandle
-                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads SRTM data, converts to .DAT, and writes directly to FC SD card.'
+                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads elevation data, converts to .DAT, and writes directly to FC SD card.'
                     : '<b style="color:#ff9800;">No SD Card linked.</b> <b style="color:#87b025;">Generate & Download</b> creates a ZIP with .DAT files. Extract and copy them to the FC SD card root.') +
                 '</div>' +
                 (sdHandle
