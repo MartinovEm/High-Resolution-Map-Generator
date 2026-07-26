@@ -101,7 +101,8 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 
 	<img width="1364" height="768" alt="image" src="https://github.com/user-attachments/assets/7e9fd1f6-2f49-4fc1-85fc-4c82db1c14c4" />
 
-	<img width="2560" height="1600" alt="select_area" src="https://github.com/user-attachments/assets/a71b231f-47b7-4775-8517-d51b91eb7c84" />
+	<img width="2535" height="1394" alt="terrain_overview" src="https://github.com/user-attachments/assets/83fb24c0-e9b5-4e15-a4b1-1e9093865913" />
+
 
 
 
@@ -118,7 +119,8 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 
 	 - **For Terrain:** Click "Sync to SD Card" to generate `.DAT` files. The tool downloads elevation data from the selected source (Re:Earth or SRTM), converts it to `.DAT` format, and writes the files directly to the flight controller SD card root. If no SD card is linked, a ZIP file (`INAV_Terrain_ReEarth.zip` or `INAV_Terrain_SRTM.zip`) will be offered for download. A 1°×1° grid overlay on the map shows which tiles will be generated. Each tile is approximately 30 MB.
 
-	<img width="1366" height="768" alt="generating" src="https://github.com/user-attachments/assets/e71bb8a1-405b-4cfe-b820-d18ec07c480b" />
+	<img width="2535" height="1394" alt="generating_terrain_files" src="https://github.com/user-attachments/assets/e60f5da3-365c-4ba6-a70f-2c98d55d6cb2" />
+
 
 
 11. **Transfer to Device**
