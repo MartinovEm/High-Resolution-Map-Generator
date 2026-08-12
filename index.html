@@ -2174,12 +2174,12 @@
             var buf = new ArrayBuffer(TERRAIN_IO_BLOCK);
             var v = new DataView(buf);
             var u8 = new Uint8Array(buf);
-            // header identical through offset 21
+            // header layout matches int16 (bitmap/lat/lon/crc/spacing); version differs below
             v.setBigUint64(0, 0x00FFFFFFFFFFFFFFn, true);
             v.setInt32(8, latE7, true);
             v.setInt32(12, lonE7, true);
             v.setUint16(16, 0, true);      // crc placeholder
-            v.setUint16(18, 1, true);      // version unchanged
+            v.setUint16(18, 2, true);      // version 2 marks the 10-bit format (int16 stays 1)
             v.setUint16(20, spacing, true);
             // heightBase = minimum of the block's heights
             var base = heights[0];
