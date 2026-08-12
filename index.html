@@ -1998,6 +1998,17 @@
         const LOCATION_SCALING_FACTOR_F32 = Math.fround(0.011131884502145034);
         const LOCATION_SCALING_FACTOR_INV_F32 = Math.fround(89.83204953368922);
 
+        // ===== EXPERIMENTAL 10-bit terrain test format (error414 POC, enable with ?fmt=u10) =====
+        // Not the default. The int16 path stays untouched unless this flag is set.
+        const TERRAIN_FMT_U10 = (function () {
+            try { return new URLSearchParams(location.search).get('fmt') === 'u10'; }
+            catch (e) { return false; }
+        })();
+        const TERRAIN_U10_DATA_SIZE = (TERRAIN_BLK_SIZE_X * TERRAIN_BLK_SIZE_Y * 10) / 8; // 896 values -> 1120 bytes
+        const TERRAIN_U10_IO_DATA = 1151;      // sizeof(gridBlock_t): CRC length (confirmed by error414)
+        const TERRAIN_U10_RESOLUTION_M = 2;    // height = heightBase + code * 2 m
+        const TERRAIN_U10_MAX_CODE = 1023;     // 10-bit: 0..1023 -> 0..2046 m above heightBase
+
         function crc16xmodem(data, len) {
             let crc = 0;
             for (let i = 0; i < len; i++) {
@@ -2116,6 +2127,85 @@
             return u8;
         }
 
+        // --- Experimental 10-bit test format helpers (?fmt=u10) ---
+
+        // Pack 10-bit codes LSB-first into u8 starting at byte dataOff.
+        // Shared by the real writer and the unit test so both exercise the same logic.
+        function u10PackCodes(u8, dataOff, codes) {
+            for (var i = 0; i < codes.length; i++) {
+                var code = codes[i] & 0x3FF;
+                var bitPos = i * 10;
+                for (var b = 0; b < 10; b++) {
+                    if (code & (1 << b)) {
+                        var abs = bitPos + b;
+                        u8[dataOff + (abs >> 3)] |= (1 << (abs & 7));
+                    }
+                }
+            }
+        }
+
+        // Verbatim port of error414's getHeightOffsetByIndex(): decode one 10-bit value.
+        function u10DecodeByIndex(u8, dataOff, valueIndex) {
+            var bitPos = valueIndex * 10;
+            var bytePos = bitPos >> 3;
+            var bitOffset = bitPos & 7;
+            var twoBytes = u8[dataOff + bytePos] | (u8[dataOff + bytePos + 1] << 8);
+            return (twoBytes >> bitOffset) & 0x3FF;
+        }
+
+        // Mandatory unit test agreed with error414: V0=0x2AA, V1=0x155 -> bytes AA 56 05.
+        function u10SelfTest() {
+            var probe = new Uint8Array(TERRAIN_IO_BLOCK);
+            u10PackCodes(probe, 0, new Uint16Array([0x2AA, 0x155]));
+            if (probe[0] !== 0xAA || probe[1] !== 0x56 || probe[2] !== 0x05) {
+                throw new Error('u10 unit test FAILED: bytes ' +
+                    probe[0].toString(16) + ' ' + probe[1].toString(16) + ' ' + probe[2].toString(16) +
+                    ' (expected AA 56 05)');
+            }
+            if (u10DecodeByIndex(probe, 0, 0) !== 0x2AA || u10DecodeByIndex(probe, 0, 1) !== 0x155) {
+                throw new Error('u10 unit test FAILED: decoder did not round-trip 0x2AA/0x155');
+            }
+        }
+
+        // Build one 10-bit test record. Layout (error414's struct order):
+        // 0..21 header (identical to int16) | 22 packed 896x10-bit | 1142 heightBase int16
+        // | 1144 grid_idx_x | 1146 grid_idx_y | 1148 lonDegrees | 1150 latDegrees | zero pad.
+        function packTerrainBlockU10(latE7, lonE7, spacing, heights, idxX, idxY, lonDeg, latDeg) {
+            var buf = new ArrayBuffer(TERRAIN_IO_BLOCK);
+            var v = new DataView(buf);
+            var u8 = new Uint8Array(buf);
+            // header identical through offset 21
+            v.setBigUint64(0, 0x00FFFFFFFFFFFFFFn, true);
+            v.setInt32(8, latE7, true);
+            v.setInt32(12, lonE7, true);
+            v.setUint16(16, 0, true);      // crc placeholder
+            v.setUint16(18, 1, true);      // version unchanged
+            v.setUint16(20, spacing, true);
+            // heightBase = minimum of the block's heights
+            var base = heights[0];
+            for (var m = 1; m < heights.length; m++) { if (heights[m] < base) base = heights[m]; }
+            // quantize to 10-bit codes, same element order as the int16 array
+            var n = TERRAIN_BLK_SIZE_X * TERRAIN_BLK_SIZE_Y;
+            var codes = new Uint16Array(n);
+            for (var idx = 0; idx < n; idx++) {
+                var code = Math.round((heights[idx] - base) / TERRAIN_U10_RESOLUTION_M);
+                if (code < 0) code = 0; else if (code > TERRAIN_U10_MAX_CODE) code = TERRAIN_U10_MAX_CODE;
+                codes[idx] = code;
+            }
+            var DATA_OFF = 22;
+            u10PackCodes(u8, DATA_OFF, codes);
+            // heightBase AFTER the packed data, then the tail fields
+            v.setInt16(DATA_OFF + TERRAIN_U10_DATA_SIZE, base, true);       // 1142
+            v.setUint16(DATA_OFF + TERRAIN_U10_DATA_SIZE + 2, idxX, true);  // 1144
+            v.setUint16(DATA_OFF + TERRAIN_U10_DATA_SIZE + 4, idxY, true);  // 1146
+            v.setInt16(DATA_OFF + TERRAIN_U10_DATA_SIZE + 6, lonDeg, true); // 1148
+            v.setInt8(DATA_OFF + TERRAIN_U10_DATA_SIZE + 8, latDeg);        // 1150
+            // crc over the whole used record (1151 bytes) with crc field = 0
+            var crc = crc16xmodem(u8, TERRAIN_U10_IO_DATA);
+            v.setUint16(16, crc, true);
+            return u8;
+        }
+
         async function createDatFromHgt(degLat, degLon, tileCache, progressCb) {
             var baseLat = degLat * 10000000;
             var baseLon = degLon * 10000000;
@@ -2125,6 +2215,9 @@
             var totalBlocks = numX * numY;
             var output = new Uint8Array(totalBlocks * TERRAIN_IO_BLOCK);
             var blockNum = 0;
+            var u10 = TERRAIN_FMT_U10;
+            if (u10) u10SelfTest();
+            var u10MaxErr = 0, u10ClippedBlocks = 0, u10WorstReliefPct = 0;
             for (var ix = 0; ix < numX; ix++) {
                 for (var iy = 0; iy < numY; iy++) {
                     var blk = addOffset(baseLat, baseLon,
@@ -2141,7 +2234,27 @@
                             heights[gx * TERRAIN_BLK_SIZE_Y + gy] = hgtElevation(tileCache, degLat, degLon, pt[0] * 1e-7, pt[1] * 1e-7);
                         }
                     }
-                    var block = packTerrainBlock(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                    var block;
+                    if (u10) {
+                        block = packTerrainBlockU10(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                        // round-trip + clipping check against the source int16 heights
+                        var vbase = heights[0];
+                        for (var vm = 1; vm < heights.length; vm++) { if (heights[vm] < vbase) vbase = heights[vm]; }
+                        var relief = 0;
+                        for (var vs = 0; vs < heights.length; vs++) {
+                            var recon = vbase + u10DecodeByIndex(block, 22, vs) * TERRAIN_U10_RESOLUTION_M;
+                            var err = Math.abs(recon - heights[vs]);
+                            if (err > u10MaxErr) u10MaxErr = err;
+                            var rel = heights[vs] - vbase;
+                            if (rel > relief) relief = rel;
+                        }
+                        var ceil = TERRAIN_U10_MAX_CODE * TERRAIN_U10_RESOLUTION_M; // 2046 m
+                        if (relief > ceil) u10ClippedBlocks++;
+                        var reliefPct = relief / ceil * 100;
+                        if (reliefPct > u10WorstReliefPct) u10WorstReliefPct = reliefPct;
+                    } else {
+                        block = packTerrainBlock(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                    }
                     output.set(block, blockNum * TERRAIN_IO_BLOCK);
                     blockNum++;
                     if (blockNum % 200 === 0) {
@@ -2151,6 +2264,18 @@
                 }
             }
             if (progressCb) progressCb(totalBlocks, totalBlocks);
+            if (u10) {
+                var tname = srtmTileName(degLat, degLon);
+                if (u10MaxErr > 1) {
+                    throw new Error('[u10] ' + tname + ' round-trip FAILED: max error ' + u10MaxErr + ' m (limit 1 m) - tile not produced');
+                }
+                appendLog('[u10] ' + tname + ': ' + totalBlocks + ' blocks (2048 B each), round-trip max err ' +
+                    u10MaxErr + ' m (<=1 OK), worst relief ' + u10WorstReliefPct.toFixed(1) + '% of 2046 m, ' +
+                    u10ClippedBlocks + ' clipped block(s)');
+                if (typeof console !== 'undefined' && console.log) {
+                    console.log('[u10] ' + tname, { blocks: totalBlocks, roundTripMaxErrM: u10MaxErr, worstReliefPct: u10WorstReliefPct, clippedBlocks: u10ClippedBlocks });
+                }
+            }
             return output;
         }
 
