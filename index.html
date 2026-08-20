@@ -194,6 +194,14 @@
             </select>
             <div id="terrainSourceNote" style="font-size:10px; color:#888; margin-top:4px; line-height:1.45;"></div>
         </div>
+        <div id="terrainFormatDiv" style="display:none;">
+            <div class="label">Output Format</div>
+            <select id="terrainFormat" onchange="onTerrainFormatChange(); saveSettings();">
+                <option value="ter" selected>.TER (INAV Terrain)</option>
+                <option value="dat">.DAT (ArduPilot)</option>
+            </select>
+            <div id="terrainFormatNote" style="font-size:10px; color:#888; margin-top:4px; line-height:1.45;"></div>
+        </div>
         <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
         <div id="maptilerKeyDiv" style="display:none;">
             <div class="label">MapTiler API Key</div>
@@ -216,10 +224,10 @@
             </div>
         </div>
         <div id="hintMapTiles" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic;">Hint: Each extra zoom level ≈ 4× more tiles. Keep the area small or lower max zoom (when large area selected) to avoid long syncs and rate limits.</div>
-        <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One .DAT file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.</div>
+        <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One terrain file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.</div>
 
         <div id="terrainAltDiv" class="toggle-container" style="display:none;"><span class="label" style="margin:0;">📍 Live Altitude</span><label class="switch"><input type="checkbox" id="terrainAltToggle" onchange="toggleLiveAlt()"><span class="slider"></span></label></div>
-        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude available after generating .DAT files — uses locally cached elevation data to avoid unnecessary server requests.</div>
+        <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude available after generating terrain files — uses locally cached elevation data to avoid unnecessary server requests.</div>
 
         <div id="zoomLockDiv" class="toggle-container"><span class="label" style="margin:0;">🔒 Zoom Lock</span><label class="switch"><input type="checkbox" id="zoomLockToggle" onchange="toggleZoomLock()"><span class="slider"></span></label></div>
         <div id="syncDock">
@@ -313,6 +321,7 @@
                 mapZoom: map.getZoom(),
                 yaapuSubTarget: document.getElementById('yaapuSubTarget') ? document.getElementById('yaapuSubTarget').value : 'FrSkyTelemetryScript',
                 terrainSource: document.getElementById('terrainSource') ? document.getElementById('terrainSource').value : 'reearth',
+                terrainFormat: document.getElementById('terrainFormat') ? document.getElementById('terrainFormat').value : 'ter',
                 rememberOn: true
             };
             localStorage.setItem('mapGenSettings', JSON.stringify(settings));
@@ -341,6 +350,7 @@
             if(s.targetWidget) targetWidget.value = s.targetWidget;
             if(s.provider) provider.value = s.provider;
             if(s.terrainSource) { const tsEl = document.getElementById('terrainSource'); if(tsEl) tsEl.value = s.terrainSource; }
+            if(s.terrainFormat) { const tfEl = document.getElementById('terrainFormat'); if(tfEl) tfEl.value = s.terrainFormat; }
             syncMapOptions();
             if(s.yaapuSubTarget) { const el = document.getElementById('yaapuSubTarget'); if(el) el.value = s.yaapuSubTarget; }
             if(s.mapType) mapTypeChoice.value = s.mapType;
@@ -383,6 +393,8 @@
             provider.value = 'OSM';
             const terrainSourceRestore = document.getElementById('terrainSource');
             if (terrainSourceRestore) terrainSourceRestore.value = 'reearth';
+            const terrainFormatRestore = document.getElementById('terrainFormat');
+            if (terrainFormatRestore) terrainFormatRestore.value = 'ter';
             syncMapOptions();
             mapTypeChoice.value = 'Street';
             projectName.value = 'MyLocalField';
@@ -1776,7 +1788,8 @@
             const lonPrefix = lon >= 0 ? 'E' : 'W';
             const latStr = String(Math.abs(lat)).padStart(2, '0');
             const lonStr = String(Math.abs(lon)).padStart(3, '0');
-            return latPrefix + latStr + lonPrefix + lonStr + '.DAT';
+            const ext = getTerrainFormat() === 'ter' ? '.TER' : '.DAT';
+            return latPrefix + latStr + lonPrefix + lonStr + ext;
         }
 
         function updateTerrainGrid() {
@@ -1896,6 +1909,7 @@
 
             if (isTerrain) {
                 updateTerrainSourceUI();
+                updateTerrainFormatUI();
             } else {
                 removeTerrainAttributions();
             }
@@ -1917,6 +1931,7 @@
             document.getElementById('hintMapTiles').style.display = isTerrain ? 'none' : '';
             document.getElementById('hintTerrain').style.display = isTerrain ? '' : 'none';
             document.getElementById('terrainSourceDiv').style.display = isTerrain ? '' : 'none';
+            document.getElementById('terrainFormatDiv').style.display = isTerrain ? '' : 'none';
             document.getElementById('terrainAltDiv').style.display = isTerrain ? '' : 'none';
             if (!isTerrain) { document.getElementById('terrainAltToggle').checked = false; toggleLiveAlt(); }
             if (isTerrain) {
@@ -1965,23 +1980,48 @@
         function updateTerrainSourceUI() {
             var note = document.getElementById('terrainSourceNote');
             var hint = document.getElementById('hintTerrain');
+            var ext = getTerrainFormat() === 'ter' ? '.TER' : '.DAT';
             removeTerrainAttributions();
             if (getTerrainSource() === 'srtm') {
                 map.attributionControl.addAttribution(TERRAIN_ATTR_SRTM);
                 if (note) note.innerHTML = 'Coverage up to ~60°N';
-                if (hint) hint.innerText = 'Hint: One .DAT file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.';
+                if (hint) hint.innerText = 'Hint: One ' + ext + ' file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.';
             } else {
                 map.attributionControl.addAttribution(TERRAIN_ATTR_REEARTH);
                 if (note) note.innerHTML = 'Global coverage incl. &gt;60°N<br>' +
                     'Re:Earth Terrain · Mapterhorn (CC BY 4.0)<br>' +
                     '<span style="color:#ff9800;">Data provided as-is — verify terrain clearance before flight.</span>' +
                     '<div style="font-size:9px; color:#666; margin-top:3px;">' + COPERNICUS_NOTICE_1 + '. ' + COPERNICUS_NOTICE_2 + '.</div>';
-                if (hint) hint.innerText = 'Hint: One .DAT file per 1°×1° grid square (~111 km). Data: Re:Earth Terrain (Copernicus-based) at 30m resolution. Ocean depths are clamped to 0m.';
+                if (hint) hint.innerText = 'Hint: One ' + ext + ' file per 1°×1° grid square (~111 km). Data: Re:Earth Terrain (Copernicus-based) at 30m resolution. Ocean depths are clamped to 0m.';
             }
         }
 
         function onTerrainSourceChange() {
             updateTerrainSourceUI();
+            updateTerrainStatus();
+        }
+
+        function getTerrainFormat() {
+            var el = document.getElementById('terrainFormat');
+            return (el && el.value === 'dat') ? 'dat' : 'ter';   // default .TER (INAV Terrain)
+        }
+
+        function terrainExt() {
+            return getTerrainFormat() === 'ter' ? '.TER' : '.DAT';
+        }
+
+        function updateTerrainFormatUI() {
+            var note = document.getElementById('terrainFormatNote');
+            if (!note) return;
+            note.innerHTML = getTerrainFormat() === 'dat'
+                ? '.DAT — int16 format for ArduPilot.'
+                : '.TER — 10-bit format for INAV Terrain.';
+        }
+
+        function onTerrainFormatChange() {
+            updateTerrainFormatUI();
+            updateTerrainSourceUI();  // refresh the hint's file extension (.TER / .DAT)
+            updateTerrainGrid();   // refresh on-map tile labels (.TER / .DAT)
             updateTerrainStatus();
         }
 
@@ -1997,6 +2037,13 @@
         const TERRAIN_IO_DATA = 1821;
         const LOCATION_SCALING_FACTOR_F32 = Math.fround(0.011131884502145034);
         const LOCATION_SCALING_FACTOR_INV_F32 = Math.fround(89.83204953368922);
+
+        // ===== 10-bit terrain format (.TER, INAV Terrain) constants =====
+        // Selected via the Output Format picker; the int16 (.DAT) path is independent.
+        const TERRAIN_U10_DATA_SIZE = (TERRAIN_BLK_SIZE_X * TERRAIN_BLK_SIZE_Y * 10) / 8; // 896 values -> 1120 bytes
+        const TERRAIN_U10_IO_DATA = 1151;      // sizeof(gridBlock_t): CRC length
+        const TERRAIN_U10_RESOLUTION_M = 2;    // height = heightBase + code * 2 m
+        const TERRAIN_U10_MAX_CODE = 1023;     // 10-bit: 0..1023 -> 0..2046 m above heightBase
 
         function crc16xmodem(data, len) {
             let crc = 0;
@@ -2116,6 +2163,85 @@
             return u8;
         }
 
+        // --- 10-bit terrain format (.TER, INAV Terrain) helpers ---
+
+        // Pack 10-bit codes LSB-first into u8 starting at byte dataOff.
+        // Shared by the writer and the unit test so both exercise the same logic.
+        function u10PackCodes(u8, dataOff, codes) {
+            for (var i = 0; i < codes.length; i++) {
+                var code = codes[i] & 0x3FF;
+                var bitPos = i * 10;
+                for (var b = 0; b < 10; b++) {
+                    if (code & (1 << b)) {
+                        var abs = bitPos + b;
+                        u8[dataOff + (abs >> 3)] |= (1 << (abs & 7));
+                    }
+                }
+            }
+        }
+
+        // Decode one 10-bit height offset (matches the INAV firmware's getHeightOffsetByIndex()).
+        function u10DecodeByIndex(u8, dataOff, valueIndex) {
+            var bitPos = valueIndex * 10;
+            var bytePos = bitPos >> 3;
+            var bitOffset = bitPos & 7;
+            var twoBytes = u8[dataOff + bytePos] | (u8[dataOff + bytePos + 1] << 8);
+            return (twoBytes >> bitOffset) & 0x3FF;
+        }
+
+        // Packing unit test: V0=0x2AA, V1=0x155 -> bytes AA 56 05.
+        function u10SelfTest() {
+            var probe = new Uint8Array(TERRAIN_IO_BLOCK);
+            u10PackCodes(probe, 0, new Uint16Array([0x2AA, 0x155]));
+            if (probe[0] !== 0xAA || probe[1] !== 0x56 || probe[2] !== 0x05) {
+                throw new Error('u10 unit test FAILED: bytes ' +
+                    probe[0].toString(16) + ' ' + probe[1].toString(16) + ' ' + probe[2].toString(16) +
+                    ' (expected AA 56 05)');
+            }
+            if (u10DecodeByIndex(probe, 0, 0) !== 0x2AA || u10DecodeByIndex(probe, 0, 1) !== 0x155) {
+                throw new Error('u10 unit test FAILED: decoder did not round-trip 0x2AA/0x155');
+            }
+        }
+
+        // Build one 10-bit (.TER) record. Layout (INAV firmware struct order):
+        // 0..21 header (identical to int16) | 22 packed 896x10-bit | 1142 heightBase int16
+        // | 1144 grid_idx_x | 1146 grid_idx_y | 1148 lonDegrees | 1150 latDegrees | zero pad.
+        function packTerrainBlockU10(latE7, lonE7, spacing, heights, idxX, idxY, lonDeg, latDeg) {
+            var buf = new ArrayBuffer(TERRAIN_IO_BLOCK);
+            var v = new DataView(buf);
+            var u8 = new Uint8Array(buf);
+            // header layout matches int16 (bitmap/lat/lon/crc/spacing); version differs below
+            v.setBigUint64(0, 0x00FFFFFFFFFFFFFFn, true);
+            v.setInt32(8, latE7, true);
+            v.setInt32(12, lonE7, true);
+            v.setUint16(16, 0, true);      // crc placeholder
+            v.setUint16(18, 50, true);     // version 50 marks the 10-bit format (int16 stays 1)
+            v.setUint16(20, spacing, true);
+            // heightBase = minimum of the block's heights
+            var base = heights[0];
+            for (var m = 1; m < heights.length; m++) { if (heights[m] < base) base = heights[m]; }
+            // quantize to 10-bit codes, same element order as the int16 array
+            var n = TERRAIN_BLK_SIZE_X * TERRAIN_BLK_SIZE_Y;
+            var codes = new Uint16Array(n);
+            for (var idx = 0; idx < n; idx++) {
+                var code = Math.round((heights[idx] - base) / TERRAIN_U10_RESOLUTION_M);
+                if (code < 0) code = 0; else if (code > TERRAIN_U10_MAX_CODE) code = TERRAIN_U10_MAX_CODE;
+                codes[idx] = code;
+            }
+            var DATA_OFF = 22;
+            u10PackCodes(u8, DATA_OFF, codes);
+            // heightBase AFTER the packed data, then the tail fields
+            v.setInt16(DATA_OFF + TERRAIN_U10_DATA_SIZE, base, true);       // 1142
+            v.setUint16(DATA_OFF + TERRAIN_U10_DATA_SIZE + 2, idxX, true);  // 1144
+            v.setUint16(DATA_OFF + TERRAIN_U10_DATA_SIZE + 4, idxY, true);  // 1146
+            v.setInt16(DATA_OFF + TERRAIN_U10_DATA_SIZE + 6, lonDeg, true); // 1148
+            v.setInt8(DATA_OFF + TERRAIN_U10_DATA_SIZE + 8, latDeg);        // 1150
+            // crc over the whole used record (1151 bytes) with crc field = 0
+            var crc = crc16xmodem(u8, TERRAIN_U10_IO_DATA);
+            v.setUint16(16, crc, true);
+            return u8;
+        }
+
         async function createDatFromHgt(degLat, degLon, tileCache, progressCb) {
             var baseLat = degLat * 10000000;
             var baseLon = degLon * 10000000;
@@ -2125,6 +2251,10 @@
             var totalBlocks = numX * numY;
             var output = new Uint8Array(totalBlocks * TERRAIN_IO_BLOCK);
             var blockNum = 0;
+            var u10 = (getTerrainFormat() === 'ter');
+            if (u10) u10SelfTest();
+            var u10MaxErr = 0, u10ClippedBlocks = 0, u10WorstReliefPct = 0;
+            var datMismatch = 0, datCrcFail = 0;
             for (var ix = 0; ix < numX; ix++) {
                 for (var iy = 0; iy < numY; iy++) {
                     var blk = addOffset(baseLat, baseLon,
@@ -2141,7 +2271,36 @@
                             heights[gx * TERRAIN_BLK_SIZE_Y + gy] = hgtElevation(tileCache, degLat, degLon, pt[0] * 1e-7, pt[1] * 1e-7);
                         }
                     }
-                    var block = packTerrainBlock(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                    var block;
+                    if (u10) {
+                        block = packTerrainBlockU10(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                        // round-trip + clipping check against the source int16 heights
+                        var vbase = heights[0];
+                        for (var vm = 1; vm < heights.length; vm++) { if (heights[vm] < vbase) vbase = heights[vm]; }
+                        var relief = 0;
+                        for (var vs = 0; vs < heights.length; vs++) {
+                            var recon = vbase + u10DecodeByIndex(block, 22, vs) * TERRAIN_U10_RESOLUTION_M;
+                            var err = Math.abs(recon - heights[vs]);
+                            if (err > u10MaxErr) u10MaxErr = err;
+                            var rel = heights[vs] - vbase;
+                            if (rel > relief) relief = rel;
+                        }
+                        var ceil = TERRAIN_U10_MAX_CODE * TERRAIN_U10_RESOLUTION_M; // 2046 m
+                        if (relief > ceil) u10ClippedBlocks++;
+                        var reliefPct = relief / ceil * 100;
+                        if (reliefPct > u10WorstReliefPct) u10WorstReliefPct = reliefPct;
+                    } else {
+                        block = packTerrainBlock(latE7, lonE7, TERRAIN_SPACING, heights, ix, iy, degLon, degLat);
+                        // self-check: int16 heights read back 1:1 and CRC recomputes
+                        var dv = new DataView(block.buffer);
+                        for (var ds = 0; ds < heights.length; ds++) {
+                            if (dv.getInt16(22 + ds * 2, true) !== heights[ds]) { datMismatch++; break; }
+                        }
+                        var savedCrc = dv.getUint16(16, true);
+                        block[16] = 0; block[17] = 0;
+                        if (crc16xmodem(block, TERRAIN_IO_DATA) !== savedCrc) datCrcFail++;
+                        dv.setUint16(16, savedCrc, true);
+                    }
                     output.set(block, blockNum * TERRAIN_IO_BLOCK);
                     blockNum++;
                     if (blockNum % 200 === 0) {
@@ -2151,6 +2310,23 @@
                 }
             }
             if (progressCb) progressCb(totalBlocks, totalBlocks);
+            var tname = srtmTileName(degLat, degLon);
+            if (u10) {
+                if (u10MaxErr > 1) {
+                    throw new Error('[ter] ' + tname + ' round-trip FAILED: max error ' + u10MaxErr + ' m (limit 1 m) - tile not produced');
+                }
+                appendLog('[ter] ' + tname + ': ' + totalBlocks + ' blocks (2048 B each), round-trip max err ' +
+                    u10MaxErr + ' m (<=1 OK), worst relief ' + u10WorstReliefPct.toFixed(1) + '% of 2046 m, ' +
+                    u10ClippedBlocks + ' clipped block(s)');
+                if (typeof console !== 'undefined' && console.log) {
+                    console.log('[ter] ' + tname, { blocks: totalBlocks, roundTripMaxErrM: u10MaxErr, worstReliefPct: u10WorstReliefPct, clippedBlocks: u10ClippedBlocks });
+                }
+            } else {
+                if (datMismatch > 0 || datCrcFail > 0) {
+                    throw new Error('[dat] ' + tname + ' self-check FAILED: ' + datMismatch + ' height-mismatch, ' + datCrcFail + ' CRC-fail block(s) - tile not produced');
+                }
+                appendLog('[dat] ' + tname + ': ' + totalBlocks + ' blocks (2048 B each), int16 heights 1:1, CRC OK');
+            }
             return output;
         }
 
@@ -2526,7 +2702,7 @@
                 document.getElementById('downloadStatus').innerText = 'Done with ' + failedCount + ' error(s).' + (skipped > 0 ? ' ' + skipped + ' skipped (already existed).' : '');
             } else {
                 var written = total - skipped;
-                var summary = written + ' .DAT file(s) written';
+                var summary = written + ' ' + terrainExt() + ' file(s) written';
                 if (skipped > 0) summary += ', ' + skipped + ' skipped (already existed)';
                 document.getElementById('modalHeader').innerText = 'Terrain Generation Complete!';
                 document.getElementById('syncInfo').innerHTML =
@@ -2666,7 +2842,7 @@
                     }
                 }
                 }
-                document.getElementById('downloadStatus').innerText = prefix + '⚙️ Converting ' + name + ' to .DAT...';
+                document.getElementById('downloadStatus').innerText = prefix + '⚙️ Converting ' + name + ' to ' + terrainExt() + '...';
                 try {
                     var capCompleted = completed;
                     var capPrefix = prefix;
@@ -2711,7 +2887,7 @@
                 document.getElementById('modalHeader').innerText = 'Writing to SD Card...';
                 document.getElementById('syncInfo').innerHTML =
                     '<div class="sync-info-row"><span>Target:</span><span>' + terrainSourceLabel() + '</span></div>' +
-                    '<div class="sync-info-row"><span>Terrain Files:</span><span>' + datFiles.length + ' .DAT file(s)</span></div>' +
+                    '<div class="sync-info-row"><span>Terrain Files:</span><span>' + datFiles.length + ' ' + terrainExt() + ' file(s)</span></div>' +
                     '<div class="sync-info-row"><span>Total Size:</span><span>~' + totalSizeMB.toFixed(0) + ' MB</span></div>' +
                     '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + datFiles.map(function(f) { return f.name; }).join(', ') + '</span></div>' +
                     '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f FREESPAC.E will be auto-deleted from SD card during sync. INAV will recreate it on next boot.</div>';
@@ -2825,7 +3001,7 @@
                 }
             }
             if (hgtFiles.length > 0) {
-                appendLog('Converting ' + hgtFiles.length + ' HGT file(s) to .DAT...');
+                appendLog('Converting ' + hgtFiles.length + ' HGT file(s) to ' + terrainExt() + '...');
                 var tileCache = {};
                 var primaryTiles = [];
                 for (var hi = 0; hi < hgtFiles.length; hi++) {
@@ -2862,7 +3038,7 @@
                 updateHgtCacheInfo();
             }
             if (datFiles.length === 0) {
-                document.getElementById('downloadStatus').innerText = 'No .DAT files generated.';
+                document.getElementById('downloadStatus').innerText = 'No ' + terrainExt() + ' files generated.';
                 document.getElementById('modalActions').style.display = 'flex';
                 document.getElementById('mainConfirmBtn').style.display = 'none';
                 var cBtn = document.getElementById('modalActions').querySelector('.btn-cancel');
@@ -2958,7 +3134,7 @@
             document.getElementById('modalActions').style.display = 'flex';
             document.getElementById('syncInfo').innerHTML =
                 '<div class="sync-info-row"><span>Target:</span><span>' + terrainSourceLabel() + '</span></div>' +
-                '<div class="sync-info-row"><span>Terrain Files:</span><span>' + tiles.length + ' .DAT file(s)</span></div>' +
+                '<div class="sync-info-row"><span>Terrain Files:</span><span>' + tiles.length + ' ' + terrainExt() + ' file(s)</span></div>' +
                 '<div class="sync-info-row"><span>Est. Output:</span><span>~' + totalSizeMB + ' MB</span></div>' +
                 '<div class="sync-info-row"><span>Elevation Data:</span><span>' + cacheInfo + '</span></div>' +
                 '<div class="sync-info-row"><span>Files:</span><span style="font-size:10px;">' + fileList.join(', ') + '</span></div>' +
@@ -2969,8 +3145,8 @@
                       '<span style="font-size:9px; color:#777;">' + COPERNICUS_NOTICE_1 + '. ' + COPERNICUS_NOTICE_2 + '.</span><br>'
                     : 'Source: NASA SRTM 30m elevation data (public domain)<br>') +
                 (sdHandle
-                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads elevation data, converts to .DAT, and writes directly to FC SD card.'
-                    : '<b style="color:#ff9800;">No SD Card linked.</b> <b style="color:#87b025;">Generate & Download</b> creates a ZIP with .DAT files. Extract and copy them to the FC SD card root.') +
+                    ? '<b style="color:#87b025;">Generate & Sync</b> downloads elevation data, converts to ' + terrainExt() + ' files, and writes directly to FC SD card.'
+                    : '<b style="color:#ff9800;">No SD Card linked.</b> <b style="color:#87b025;">Generate & Download</b> creates a ZIP with ' + terrainExt() + ' files. Extract and copy them to the FC SD card root.') +
                 '</div>' +
                 (sdHandle
                     ? '<div style="margin:6px 0; font-size:11px; color:#aaa;">\u26a0\ufe0f FREESPAC.E will be auto-deleted from SD card during sync. INAV will recreate it on next boot.</div>'
