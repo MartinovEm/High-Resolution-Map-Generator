@@ -97,7 +97,8 @@ The elevation sources were validated against **ICESat-2** — NASA's satellite l
 
 So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the most accurate source this tool can use. Differences are small in absolute terms (1–3 m); all sources are usable for terrain-following clearance, but Re:Earth (default) is the best available. Accuracy varies with terrain, vegetation and snow — these figures are for the tested mid-latitude regions, not a global guarantee.
 
-<!-- Forest plot: DEM source accuracy vs ICESat-2 — add the chart image here -->
+<img width="1920" height="720" alt="image" src="https://github.com/user-attachments/assets/f5932659-0ec2-4d29-a654-9fadaa112e1d" />
+
 
 ---
 
@@ -136,7 +137,8 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 
 	<img width="1364" height="768" alt="image" src="https://github.com/user-attachments/assets/7e9fd1f6-2f49-4fc1-85fc-4c82db1c14c4" />
 
-	<img width="2535" height="1394" alt="terrain_overview" src="https://github.com/user-attachments/assets/83fb24c0-e9b5-4e15-a4b1-1e9093865913" />
+	<img width="2559" height="1599" alt="selecting area" src="https://github.com/user-attachments/assets/8e2cb2b4-f306-4cf1-ba78-02b79d0638e0" />
+
 
 
 
@@ -154,7 +156,8 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 
 	 - **For Terrain:** Click "Sync to SD Card" to generate the terrain files in the selected **Output Format** (`.TER` or `.DAT`). The tool downloads elevation data from the selected source (Re:Earth or SRTM), converts it, and writes the files directly to the flight controller SD card root. If no SD card is linked, a ZIP file (`INAV_Terrain_ReEarth.zip` or `INAV_Terrain_SRTM.zip`) will be offered for download. A 1°×1° grid overlay on the map shows which tiles will be generated. Each tile is approximately 30 MB.
 
-	<img width="2535" height="1394" alt="generating_terrain_files" src="https://github.com/user-attachments/assets/e60f5da3-365c-4ba6-a70f-2c98d55d6cb2" />
+	<img width="2559" height="1599" alt="generating_terrain_files" src="https://github.com/user-attachments/assets/966c4aa0-7492-43a9-99a2-2593e7df2ea1" />
+
 
 
 
