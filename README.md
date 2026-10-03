@@ -57,7 +57,7 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 
 ## Terrain
 
-Generate terrain elevation files at 1 arc-second (~30 m) resolution. The files go on the flight controller's SD card and enable terrain altitude reference in the OSD and for terrain-following. Two output formats and two elevation sources are selectable.
+Generate terrain elevation files on a 1 arc-second (~30 m) grid. The files go on the flight controller's SD card and enable terrain altitude reference in the OSD and for terrain-following. Two output formats and two elevation sources are selectable.
 
 **Output format**
 
@@ -70,8 +70,8 @@ Generate terrain elevation files at 1 arc-second (~30 m) resolution. The files g
 
 | Source | Coverage | Notes |
 |---|---|---|
-| **Re:Earth Terrain** (default) | global, incl. >60°N | [Re:Earth](https://terrain.reearth.land/) · Mapterhorn (CC BY 4.0); Copernicus-based, more accurate on bare earth |
-| NASA / Mapzen SRTM1 | 60°N – 56°S | [NASA SRTM1](https://www.usgs.gov/centers/eros/science/usgs-eros-archive-digital-elevation-shuttle-radar-topography-mission-srtm-1), public domain |
+| **Re:Earth Terrain** (default) | global up to 85°N/S | [Re:Earth](https://terrain.reearth.land/) · Mapterhorn (CC BY 4.0); Copernicus GLO-30 + ~150 national models, more accurate on bare earth |
+| NASA / Mapzen SRTM1 | real SRTM 60°N – 56°S; coarse fill data beyond (errors of tens to hundreds of metres) | Mapzen/Tilezen terrain tiles ([NASA SRTM](https://www.usgs.gov/centers/eros/science/usgs-eros-archive-digital-elevation-shuttle-radar-topography-mission-srtm-1), GMTED2010, ETOPO1) |
 
 **Details**
 
@@ -79,7 +79,7 @@ Generate terrain elevation files at 1 arc-second (~30 m) resolution. The files g
 |---|---|
 | **Output format** | `.TER` (INAV Terrain, default) or `.DAT` (ArduPilot) — selectable in the tool |
 | **Data source** | Re:Earth (default) or NASA / Mapzen SRTM1 — selectable in the tool |
-| **Resolution** | 1 arc-second (~30 m) |
+| **Resolution** | 1 arc-second (~30 m) grid — real 30 m data from Re:Earth, and from SRTM only between 60°N and 56°S |
 | **Output** | One file per 1°×1° grid square (~111 km), e.g. `N42E023.TER` |
 | **Output location** | FC SD card root (e.g. `G:\N42E023.TER`) |
 | **File size** | ~30 MB per tile |
@@ -126,7 +126,7 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 
 6. **Set Zoom Levels**
 	- Adjust the minimum and maximum zoom levels for the tiles exported. Range 1-20.
-	- Not applicable for Terrain — elevation resolution is ~30 m regardless of the selected source.
+	- Not applicable for Terrain — files use a fixed ~30 m grid (SRTM has real 30 m data only between 60°N and 56°S).
 
 7. **Find Your Flying Field**
 	- Use the search box to locate your field, or pan/zoom manually. Optional zoom-lock feature.
@@ -189,7 +189,7 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 
 - **Geolocation:** The app can center the map on your current location, but for security reasons, browser geolocation permission is only requested for 10 seconds per session.
 - **Yaapu Output Folders:** Even when using ESRI or OSM as the provider, the Yaapu output folders will always be named as if they are Google map types. This is required for Yaapu compatibility.
-- **Terrain Source Fallback:** When **SRTM** is selected, a warning is shown if the area extends beyond its 60°N–56°S band (Re:Earth is global). If **Re:Earth** is unreachable during a generation, the tool asks before switching to SRTM — it never changes the source silently.
+- **Terrain Source Warnings & Fallback:** With **SRTM**, beyond 60°N–56°S a warning says the server only has coarse fill data there; with **Re:Earth**, a warning is shown beyond 85° latitude (no data there). If **Re:Earth** is unreachable during a generation, the tool asks before switching to SRTM — it never changes the source silently.
 - **Terrain Elevation Cache:** Downloaded elevation grids are cached locally in the browser using IndexedDB (~25 MB per grid), kept separate per source. Repeat generations for nearby or overlapping areas are fast — the data is reused without re-downloading. You can clear the cache from the sidebar.
 - **Terrain Live Altitude:** After generating terrain files, you can enable the "Live Altitude" toggle to see real-time ground elevation under your cursor. This uses the locally cached elevation data — no additional server requests are made.
 
@@ -205,7 +205,7 @@ data is credited as follows:
   > produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved
   >
   > The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30
-- **NASA SRTM** elevation data is in the public domain, fetched via the AWS "Terrain Tiles" (Mapzen) mirror.
+- **SRTM source:** Mapzen/Tilezen "Terrain Tiles" on AWS — NASA SRTM between 60°N and 56°S, coarse GMTED2010 / ETOPO1 fill data elsewhere. GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey; ETOPO1 courtesy of NOAA.
 
 This project is not endorsed by or affiliated with Re:Earth, Mapterhorn, Copernicus, ESA, or NASA.
 

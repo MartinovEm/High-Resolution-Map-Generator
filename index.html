@@ -224,7 +224,7 @@
             </div>
         </div>
         <div id="hintMapTiles" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic;">Hint: Each extra zoom level ≈ 4× more tiles. Keep the area small or lower max zoom (when large area selected) to avoid long syncs and rate limits.</div>
-        <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One terrain file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.</div>
+        <div id="hintTerrain" style="font-size:10px; color:#666; margin:-2px 0 2px; font-style:italic; display:none;">Hint: One terrain file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m between 60°N and 56°S (coarse fill data beyond). Ocean depths are clamped to 0m.</div>
 
         <div id="terrainAltDiv" class="toggle-container" style="display:none;"><span class="label" style="margin:0;">📍 Live Altitude</span><label class="switch"><input type="checkbox" id="terrainAltToggle" onchange="toggleLiveAlt()"><span class="slider"></span></label></div>
         <div id="terrainAltHint" style="font-size:10px; color:#ff9800; margin:-2px 0 2px; font-style:italic; display:none;">Altitude available after generating terrain files — uses locally cached elevation data to avoid unnecessary server requests.</div>
@@ -1888,7 +1888,7 @@
                 '<span style="color:#87b025">Est. Size: ~' + estSizeMB + ' MB</span><br>' +
                 '<span style="color:#aaa; font-size:11px">' + fileList.join(', ') + '</span>';
             if (getTerrainSource() === 'srtm' && (bounds.getNorth() > 60 || bounds.getSouth() < -56)) {
-                status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond SRTM coverage (60°N to 56°S). Tiles outside this range will have no elevation data.</span>';
+                status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond real SRTM coverage (60°N–56°S). This source only has coarse fill data there — errors reach hundreds of metres. Use Re:Earth instead.</span>';
             }
             if (getTerrainSource() === 'reearth' && (bounds.getNorth() > 85 || bounds.getSouth() < -85)) {
                 status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond 85° latitude. Re:Earth has no data there — those tiles will be flat 0 m.</span>';
@@ -1972,7 +1972,7 @@
         }
 
         function terrainSourceLabel() {
-            return getTerrainSource() === 'srtm' ? 'Terrain — SRTM1 (30m)' : 'Terrain — Re:Earth (30m)';
+            return getTerrainSource() === 'srtm' ? 'Terrain — SRTM1 (30m within 60°N–56°S)' : 'Terrain — Re:Earth (30m)';
         }
 
         function removeTerrainAttributions() {
@@ -1987,8 +1987,8 @@
             removeTerrainAttributions();
             if (getTerrainSource() === 'srtm') {
                 map.attributionControl.addAttribution(TERRAIN_ATTR_SRTM);
-                if (note) note.innerHTML = 'Coverage up to ~60°N';
-                if (hint) hint.innerText = 'Hint: One ' + ext + ' file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m resolution. Ocean depths are clamped to 0m.';
+                if (note) note.innerHTML = 'Real SRTM between 60°N and 56°S. Beyond that the server only has coarse fill data (errors of tens to hundreds of metres) — use Re:Earth there.';
+                if (hint) hint.innerText = 'Hint: One ' + ext + ' file per 1°×1° grid square (~111 km). Data: NASA SRTM1 at 30m between 60°N and 56°S (coarse fill data beyond). Ocean depths are clamped to 0m.';
             } else {
                 map.attributionControl.addAttribution(TERRAIN_ATTR_REEARTH);
                 if (note) note.innerHTML = 'Global coverage incl. &gt;60°N<br>' +
@@ -2770,7 +2770,7 @@
                 (sizeMatch
                     ? '<b style="color:#ff9800;">Re:Earth sent elevation tiles in an unexpected format</b> (' + sizeMatch[1] + ' instead of 512×512), so they cannot be read safely. Nothing was written.<br><br>'
                     : '<b style="color:#ff9800;">Re:Earth is unavailable</b> (server unreachable or throttling).<br><br>') +
-                'You can switch this generation to the <b>Mapzen (NASA) SRTM</b> fallback source (coverage up to ~60°N), or close and try Re:Earth again later.' +
+                'You can switch this generation to the <b>Mapzen (NASA) SRTM</b> fallback source (real SRTM between 60°N and 56°S, coarse fill data beyond), or close and try Re:Earth again later.' +
                 '</div>';
             var mainBtn = document.getElementById('mainConfirmBtn');
             mainBtn.innerText = '↺ Switch to SRTM & Retry';
@@ -3192,7 +3192,7 @@
                     ? 'Source: Re:Earth Terrain · Mapterhorn (CC BY 4.0) — Copernicus-based, 30m<br>' +
                       '<span style="color:#ff9800;">Best-effort service — data as-is; verify terrain clearance before flight.</span><br>' +
                       '<span style="font-size:9px; color:#777;">' + COPERNICUS_NOTICE_1 + '. ' + COPERNICUS_NOTICE_2 + '.</span><br>'
-                    : 'Source: NASA SRTM 30m elevation data (public domain)<br>') +
+                    : 'Source: NASA SRTM 30m between 60°N and 56°S; coarse fill data beyond<br>') +
                 (sdHandle
                     ? '<b style="color:#87b025;">Generate & Sync</b> downloads elevation data, converts to ' + terrainExt() + ' files, and writes directly to FC SD card.'
                     : '<b style="color:#ff9800;">No SD Card linked.</b> <b style="color:#87b025;">Generate & Download</b> creates a ZIP with ' + terrainExt() + ' files. Extract and copy them to the FC SD card root.') +
