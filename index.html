@@ -1890,6 +1890,9 @@
             if (getTerrainSource() === 'srtm' && (bounds.getNorth() > 60 || bounds.getSouth() < -56)) {
                 status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond SRTM coverage (60°N to 56°S). Tiles outside this range will have no elevation data.</span>';
             }
+            if (getTerrainSource() === 'reearth' && (bounds.getNorth() > 85 || bounds.getSouth() < -85)) {
+                status.innerHTML += '<br><span style="color:#ff5252; font-size:11px">⚠️ Selection extends beyond 85° latitude. Re:Earth has no data there — those tiles will be flat 0 m.</span>';
+            }
         }
 
         var preTerrainZoom = null;
@@ -2354,17 +2357,24 @@
         async function fetchSrtmTile(lat, lon, statusCb) {
             var url = srtmUrl(lat, lon);
             var name = srtmTileName(lat, lon);
+            var stage = 'network';   // what failed: network | http | damaged | browser
             try {
                 if (statusCb) statusCb('connecting');
                 var resp = await fetch(url);
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) { stage = 'http'; throw new Error('HTTP ' + resp.status); }
                 if (statusCb) statusCb('downloading');
                 var gz = await resp.arrayBuffer();
                 if (statusCb) statusCb('decompressing');
-                return await decompressGz(gz);
+                stage = 'damaged';
+                var data = await decompressGz(gz);
+                if (data.length !== SRTM_GRID * SRTM_GRID * 2) throw new Error('unexpected size ' + data.length + ' bytes');
+                return data;
             } catch (e) {
                 appendLog('Fetch failed for ' + name + '.hgt.gz: ' + e.message, true);
-                throw new Error('FETCH_FAILED');
+                var err = new Error('FETCH_FAILED');
+                err.kind = /does not support gzip/.test(e.message) ? 'browser' : stage;
+                err.status = resp ? resp.status : 0;
+                throw err;
             }
         }
 
@@ -2400,6 +2410,11 @@
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             var blob = await resp.blob();
             var bmp = await createImageBitmap(blob);
+            if (bmp.width !== REEARTH_TILE_PX || bmp.height !== REEARTH_TILE_PX) {
+                var badSize = bmp.width + '×' + bmp.height;
+                if (bmp.close) bmp.close();
+                throw new Error('Unexpected Re:Earth tile size ' + badSize);
+            }
             if (!reearthDecodeCanvas) {
                 reearthDecodeCanvas = document.createElement('canvas');
                 reearthDecodeCanvas.width = REEARTH_TILE_PX;
@@ -2506,6 +2521,25 @@
             }
         }
 
+        // How far (degrees of longitude) the block lattice of createDatFromHgt reaches past the
+        // cell's east edge. Walks every post row with the same addOffset math, so the east/NE
+        // strips can be built wide enough at every latitude.
+        function terrainLatticeEastOvershootDeg(degLat, degLon) {
+            var baseLat = degLat * 10000000;
+            var baseLon = degLon * 10000000;
+            var numX = 0;
+            while (addOffset(baseLat, baseLon, numX * TERRAIN_BLK_SPACE_X * TERRAIN_SPACING, 0)[0] * 1e-7 - degLat < 1.0) numX++;
+            var numY = eastBlocks(baseLat, baseLon);
+            var eastM = ((numY - 1) * TERRAIN_BLK_SPACE_Y + TERRAIN_BLK_SIZE_Y - 1) * TERRAIN_SPACING;
+            var northM = ((numX - 1) * TERRAIN_BLK_SPACE_X + TERRAIN_BLK_SIZE_X - 1) * TERRAIN_SPACING;
+            var maxLonE7 = -Infinity;
+            for (var n = 0; n <= northM; n += TERRAIN_SPACING) {
+                var lonE7 = addOffset(baseLat, baseLon, n, eastM)[1];
+                if (lonE7 > maxLonE7) maxLonE7 = lonE7;
+            }
+            return maxLonE7 * 1e-7 - (degLon + 1);
+        }
+
         /*
          * Returns a tileCache for createDatFromHgt covering one 1°×1° cell: a full primary
          * grid (reused from the run cache / IndexedDB, or built from Re:Earth tiles) plus
@@ -2545,7 +2579,11 @@
             var xLeft = lonToPixelX(degLon, z), xRight = lonToPixelX(degLon + 1, z);
             var yTop = latToPixelY(degLat + 1, z), yBottom = latToPixelY(degLat, z);
             var latMarginDeg = 1200 / 111320;
-            var lonMarginDeg = 2500 / (111320 * Math.max(0.05, Math.cos((degLat + 0.5) * Math.PI / 180)));
+            // East strip must cover the lattice's east-most post (+2 columns); the old fixed
+            // 2500 m width stays as a floor.
+            var lonMarginDeg = Math.max(
+                2500 / (111320 * Math.max(0.05, Math.cos((degLat + 0.5) * Math.PI / 180))),
+                terrainLatticeEastOvershootDeg(degLat, degLon) + 2 / 3600);
             var xRightM = lonToPixelX(degLon + 1 + lonMarginDeg, z);
             var yTopM = latToPixelY(degLat + 1 + latMarginDeg, z);
             var primRect = [xLeft - 2, xRight + 2, yTop - 2, yBottom + 2];
@@ -2723,12 +2761,15 @@
          * Re:Earth is best-effort community hosting — if it can't be reached, ask the user
          * before falling back to SRTM. Never switch elevation sources silently.
          */
-        function showReearthFallbackPrompt(tiles) {
-            document.getElementById('downloadStatus').innerText = 'Re:Earth server unavailable.';
+        function showReearthFallbackPrompt(tiles, err) {
+            var sizeMatch = err && /^Unexpected Re:Earth tile size (.+)$/.exec(err.message);
+            document.getElementById('downloadStatus').innerText = sizeMatch ? 'Re:Earth data in an unexpected format.' : 'Re:Earth server unavailable.';
             document.getElementById('modalActions').style.display = 'flex';
             document.getElementById('syncInfo').innerHTML =
                 '<div style="color:#aaa; font-size:13px; line-height:1.6; margin:8px 0;">' +
-                '<b style="color:#ff9800;">Re:Earth is unavailable</b> (server unreachable or throttling).<br><br>' +
+                (sizeMatch
+                    ? '<b style="color:#ff9800;">Re:Earth sent elevation tiles in an unexpected format</b> (' + sizeMatch[1] + ' instead of 512×512), so they cannot be read safely. Nothing was written.<br><br>'
+                    : '<b style="color:#ff9800;">Re:Earth is unavailable</b> (server unreachable or throttling).<br><br>') +
                 'You can switch this generation to the <b>Mapzen (NASA) SRTM</b> fallback source (coverage up to ~60°N), or close and try Re:Earth again later.' +
                 '</div>';
             var mainBtn = document.getElementById('mainConfirmBtn');
@@ -2778,7 +2819,7 @@
                     } catch (e) {
                         if (syncAborted) break;
                         appendLog('Re:Earth fetch failed: ' + e.message, true);
-                        showReearthFallbackPrompt(tiles);
+                        showReearthFallbackPrompt(tiles, e);
                         return;
                     }
                 } else {
@@ -2805,15 +2846,23 @@
                         document.getElementById('downloadStatus').innerText = prefix + '✅ Downloaded ' + name + ' (' + (hgtData.length / 1048576).toFixed(1) + ' MB)';
                         appendLog('Downloaded ' + name + '.hgt (' + (hgtData.length / 1048576).toFixed(1) + ' MB)');
                     } catch (e) {
+                        var why;
+                        if (e.kind === 'http') why = 'The SRTM server answered with error ' + (e.status || '?') + ' for ' + name + '. Try again later, or switch the Provider to Re:Earth.';
+                        else if (e.kind === 'damaged') why = 'The downloaded file ' + name + '.hgt.gz was damaged. Try again, or switch the Provider to Re:Earth.';
+                        else if (e.kind === 'browser') why = 'This browser cannot unpack the elevation data. Use a current Chrome or Edge.';
+                        else why = 'Could not reach the SRTM server for ' + name + '. Check your internet connection (or a firewall / ad-blocker) and try again.';
                         appendLog('Auto-fetch failed — use "Import HGT Files" to select local .hgt.gz files.', true);
-                        document.getElementById('downloadStatus').innerText = 'Fetch blocked. Use Import button below.';
+                        document.getElementById('downloadStatus').innerText = 'Download failed. See the options below.';
                         document.getElementById('modalActions').style.display = 'flex';
                         document.getElementById('syncInfo').innerHTML =
                             '<div style="color:#aaa; font-size:13px; line-height:1.6; margin:8px 0;">' +
-                            'Direct download failed (CORS restriction from file:// origin).<br><br>' +
+                            why + '<br><br>' +
                             '<b style="color:#ff9800;">Option 1:</b> Click <b style="color:#87b025;">Import HGT Files</b> and select .hgt.gz files ' +
-                            'downloaded from:<br><a href="' + srtmUrl(tile.lat, tile.lon) + '" target="_blank" style="color:#87b025; word-break:break-all; font-size:11px;">' + srtmUrl(tile.lat, tile.lon) + '</a><br><br>' +
-                            '<b style="color:#ff9800;">Option 2:</b> Serve this app from a local web server (no CORS issue).' +
+                            'downloaded from:<br><a href="' + srtmUrl(tile.lat, tile.lon) + '" target="_blank" style="color:#87b025; word-break:break-all; font-size:11px;">' + srtmUrl(tile.lat, tile.lon) + '</a>' +
+                            (location.protocol === 'file:'
+                                ? '<br><br><b style="color:#ff9800;">Option 2:</b> You opened the tool as a local file — try the online version: ' +
+                                  '<a href="https://martinovem.github.io/High-Resolution-Map-Generator/" target="_blank" style="color:#87b025; word-break:break-all;">martinovem.github.io/High-Resolution-Map-Generator</a>'
+                                : '') +
                             '</div>';
                         var mainBtn = document.getElementById('mainConfirmBtn');
                         mainBtn.innerText = '\ud83d\udce5 Import HGT Files';
