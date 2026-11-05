@@ -205,7 +205,7 @@
         <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
         <div id="maptilerKeyDiv" style="display:none;">
             <div class="label">MapTiler API Key</div>
-            <input type="text" id="maptilerKey" placeholder="Paste your MapTiler API key" aria-label="MapTiler API Key" oninput="onMaptilerKeyInput();">
+            <input type="password" id="maptilerKey" placeholder="Paste your MapTiler API key" aria-label="MapTiler API Key" autocomplete="off" spellcheck="false" oninput="onMaptilerKeyInput();">
             <div style="font-size:10px; color:#888; margin-top:4px;">Get a free key at <a href="https://www.maptiler.com/" target="_blank" style="color:#87b025;">maptiler.com</a></div>
         </div>
         <div id="googleWarning" class="google-warning">⚠️ Warning: Google might temporarily ban IPs after bulk downloads for 24 hours.</div>
