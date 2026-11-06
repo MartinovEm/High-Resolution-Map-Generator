@@ -41,6 +41,8 @@
         .label { font-size: 12px; text-transform: uppercase; color: #aaa; margin-bottom: 5px; font-weight: bold; }
         #controls select, #controls input { width: 100%; padding: 10px; font-size: 14px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #fff; box-sizing: border-box; outline: none; transition: border 0.3s; }
         #controls select:focus, #controls input:focus { border-color: #87b025; }
+        /* Hide the MapTiler key on screen without making it a password field, which browsers would offer to save or autofill. */
+        #maptilerKey { -webkit-text-security: disc; }
 
         .zoom-row { display: flex; gap: 10px; width: 100%; }
         .zoom-row > div { flex: 1; }
@@ -205,7 +207,7 @@
         <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
         <div id="maptilerKeyDiv" style="display:none;">
             <div class="label">MapTiler API Key</div>
-            <input type="password" id="maptilerKey" placeholder="Paste your MapTiler API key" aria-label="MapTiler API Key" autocomplete="off" spellcheck="false" oninput="onMaptilerKeyInput();">
+            <input type="text" id="maptilerKey" placeholder="Paste your MapTiler API key" aria-label="MapTiler API Key" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="onMaptilerKeyInput();">
             <div style="font-size:10px; color:#888; margin-top:4px;">Get a free key at <a href="https://www.maptiler.com/" target="_blank" style="color:#87b025;">maptiler.com</a></div>
         </div>
         <div id="googleWarning" class="google-warning">⚠️ Warning: Google might temporarily ban IPs after bulk downloads for 24 hours.</div>
