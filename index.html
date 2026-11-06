@@ -168,7 +168,7 @@
                 <option value="b14ckyy">b14ckyy ETHOS Mapping Widget</option>
                 <option value="yaapu">Yaapu</option>
                 <option value="terrain">Terrain</option>
-                <option value="export">Offline Tile Export (256x256, ZIP)</option>
+                <option value="export">Custom Tile Export (256x256, ZIP)</option>
             </select>
         </div>
         <div id="yaapuSubTargetDiv" style="display:none;">
@@ -708,7 +708,7 @@
         }
 
         /*
-         * Offline tile export: full-resolution tiles in a user-defined folder layout.
+         * Custom tile export: full-resolution tiles in a user-defined folder layout.
          * It is not tied to any widget and is always delivered as a ZIP download.
          */
         const EXPORT_TILE_SIZE = 256;
@@ -1500,7 +1500,7 @@
         function getTargetDisplayName(target) {
             if (target === 'export') {
                 const profile = getOutputProfile(target);
-                return `Offline Export (${profile.size}x${profile.size} ${profile.label})`;
+                return `Custom Tile Export (${profile.size}x${profile.size} ${profile.label})`;
             }
             return target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
         }
@@ -1572,7 +1572,7 @@
                 if (keyEl) keyEl.focus();
                 return;
             }
-            // Offline export: block on an unusable folder name or tile path pattern
+            // Custom tile export: block on an unusable folder name or tile path pattern
             const isExport = isExportMode();
             if (isExport) {
                 const exportCfg = getExportConfig(document.getElementById('provider').value, document.getElementById('mapTypeChoice').value);
@@ -1592,7 +1592,7 @@
                 status.innerText = '';
             }
             syncAborted = false;
-            document.getElementById('modalHeader').innerText = isExport ? "Offline Tile Export" : "Syncing to SD Card";
+            document.getElementById('modalHeader').innerText = isExport ? "Custom Tile Export" : "Syncing to SD Card";
             document.getElementById('overwriteSection').style.display = 'flex';
             document.getElementById('progressSection').style.display = 'none';
             document.getElementById('modalActions').style.display = 'flex';
@@ -1655,7 +1655,7 @@
         async function confirmSync() {
             syncAborted = false;
             const target = document.getElementById('targetWidget').value;
-            /* The offline export is always delivered as a ZIP, even while an SD card is linked. */
+            /* The custom tile export is always delivered as a ZIP, even while an SD card is linked. */
             const outHandle = (target === 'export') ? null : sdHandle;
             if (outHandle) {
                 try {
@@ -1822,7 +1822,7 @@
                     const yst = document.getElementById('yaapuSubTarget');
                     targetLabel = (yst && yst.value === 'HorusMappingWidget') ? 'Yaapu-EdgeTX' : 'Yaapu-ETHOS';
                 } else if (target === 'export') {
-                    targetLabel = `Offline-${profile.size}`;
+                    targetLabel = `Custom-${profile.size}`;
                 }
                 const safeName = projName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'MapTiles';
                 saveAs(await zip.generateAsync({type: "blob"}), `${safeName}_${targetLabel}.zip`);
