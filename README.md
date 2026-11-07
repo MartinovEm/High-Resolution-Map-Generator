@@ -49,7 +49,7 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 	 - Output format: JPEG
 	 - Output path: `/IMAGES/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.jpg`
 	 - **Note:** For both Yaapu sub-targets, regardless of the selected provider (including ESRI or OSM), the output folder will always use the "Google" naming convention (`GoogleMap`, `GoogleSatelliteMap`, or `GoogleHybridMap`). This is required for compatibility with the Yaapu widget. For example, if you select ESRI as the provider and Satellite as the map type, the output will still be placed in `.../GoogleSatelliteMap/...` even though the tiles are from ESRI. This applies equally to Yaapu - ETHOS (`/bitmaps/yaapu/maps/...`) and Yaapu - EdgeTX (`/IMAGES/yaapu/maps/...`).
-	- **[Terrain](https://github.com/iNavFlight/inav/wiki/Navigation-Terrain-Following):** `.TER` (INAV Terrain, default) or `.DAT` (ArduPilot) elevation files for the flight controller SD card — see the dedicated **Terrain** section below.
+	- **[Terrain](https://github.com/iNavFlight/inav/blob/maintenance-10.x/docs/Terrain.md):** `.TER` (INAV Terrain, default) or `.DAT` (ArduPilot) elevation files for the flight controller SD card — see the dedicated **Terrain** section below.
 	- **Custom Tile Export (256x256, ZIP):** full-resolution tiles in your own folder layout, not tied to any widget — see the dedicated **Custom Tile Export** section below.
 	 - Output format: JPEG 80% quality or PNG
 	 - Output path (inside the ZIP): `/{Export Folder}/{Zoom}/{X}/{Y}.jpg` (or `.png`) by default; `{Zoom}/{Y}/{X}` or a custom pattern can be selected
