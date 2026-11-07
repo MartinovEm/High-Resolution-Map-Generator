@@ -50,8 +50,26 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 	 - Output path: `/IMAGES/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.jpg`
 	 - **Note:** For both Yaapu sub-targets, regardless of the selected provider (including ESRI or OSM), the output folder will always use the "Google" naming convention (`GoogleMap`, `GoogleSatelliteMap`, or `GoogleHybridMap`). This is required for compatibility with the Yaapu widget. For example, if you select ESRI as the provider and Satellite as the map type, the output will still be placed in `.../GoogleSatelliteMap/...` even though the tiles are from ESRI. This applies equally to Yaapu - ETHOS (`/bitmaps/yaapu/maps/...`) and Yaapu - EdgeTX (`/IMAGES/yaapu/maps/...`).
 	- **[Terrain](https://github.com/iNavFlight/inav/wiki/Navigation-Terrain-Following):** `.TER` (INAV Terrain, default) or `.DAT` (ArduPilot) elevation files for the flight controller SD card — see the dedicated **Terrain** section below.
+	- **Offline Tile Export (256x256, ZIP):** full-resolution tiles for local use, not tied to any widget — see the dedicated **Offline Tile Export** section below.
 - **Direct SD Card Sync:** If your browser supports the File System Access API (Chrome; Edge), write tiles directly to your SD card.
 - **ZIP Download Fallback:** If SD card access is not available, the tool will offer a ZIP download for manual transfer.
+
+---
+
+## Offline Tile Export
+
+Export the selected area as full-resolution **256x256** tiles for local use, for example as an offline tile folder for other map software. Provider, map type, zoom range and area work exactly as for the widget targets, and multi-layer maps such as ESRI Hybrid are still merged into one tile. The export is always delivered as a ZIP download.
+
+| Option | Values |
+|---|---|
+| **Export Folder (inside ZIP)** | Root folder of the tiles. Default `{provider}_{type}` (e.g. `ESRI_Hybrid`); sub-folders with `/` are allowed |
+| **Tile Path Order** | `Z / X / Y` (OSM standard, default) · `Z / Y / X` (ESRI order) · `Custom pattern` |
+| **Custom Tile Path Pattern** | Free pattern with `{z}`, `{x}`, `{y}` (all three required) and optional `{provider}`, `{type}`, e.g. `{z}/{y}/s_{x}` |
+| **Image Format** | JPEG 80% (default) or PNG (lossless, several times larger) |
+
+- Every provider is written in the selected order — ESRI's native `Z/Y/X` tile order is converted like all others.
+- Resulting path: `{Export Folder}/{Tile Path}.jpg` or `.png`, e.g. `ESRI_Hybrid/14/8580/5736.jpg`. The ZIP is named `{Project Name}_Offline-256.zip`.
+- All tiles are kept in memory until the ZIP is written. The tool warns before very large exports — reduce the area or the max zoom if the browser runs out of memory.
 
 ---
 
@@ -115,7 +133,7 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 	- (Optional) Click "Link SD Card" (or "Link FC SD Card" for INAV Terrain) to connect your SD card for direct export.
 
 3. **Select Output Target**
-	- Choose the widget type based on the Lua script installed on your radio (**b14ckyy** or **Yaapu**), or select **Terrain** to generate elevation data for your flight controller.
+	- Choose the widget type based on the Lua script installed on your radio (**b14ckyy** or **Yaapu**), select **Terrain** to generate elevation data for your flight controller, or select **Offline Tile Export** for full-resolution 256x256 tiles as a ZIP.
 
 4. **Set Project Name**
 
@@ -153,6 +171,8 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 
 
 	 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0ffde6b7-4b6e-43f0-9975-ed1528dccd2a" />
+
+	 - **For Offline Tile Export:** Set the export folder, tile path order and image format, then click "Export as ZIP" and confirm with "Download ZIP".
 
 	 - **For Terrain:** Click "Sync to SD Card" to generate the terrain files in the selected **Output Format** (`.TER` or `.DAT`). The tool downloads elevation data from the selected source (Re:Earth or SRTM), converts it, and writes the files directly to the flight controller SD card root. If no SD card is linked, a ZIP file (`INAV_Terrain_ReEarth.zip` or `INAV_Terrain_SRTM.zip`) will be offered for download. A 1°×1° grid overlay on the map shows which tiles will be generated. Each tile is approximately 30 MB.
 

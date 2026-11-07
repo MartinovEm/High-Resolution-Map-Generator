@@ -170,6 +170,7 @@
                 <option value="b14ckyy">b14ckyy ETHOS Mapping Widget</option>
                 <option value="yaapu">Yaapu</option>
                 <option value="terrain">Terrain</option>
+                <option value="export">Custom Tile Export (256x256, ZIP)</option>
             </select>
         </div>
         <div id="yaapuSubTargetDiv" style="display:none;">
@@ -204,7 +205,7 @@
             </select>
             <div id="terrainFormatNote" style="font-size:10px; color:#888; margin-top:4px; line-height:1.45;"></div>
         </div>
-        <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); saveSettings();"></select></div>
+        <div id="mapTypeDiv"><div class="label">Map Type</div><select id="mapTypeChoice" onchange="switchMapLayer(); updateExportPreview(); saveSettings();"></select></div>
         <div id="maptilerKeyDiv" style="display:none;">
             <div class="label">MapTiler API Key</div>
             <input type="text" id="maptilerKey" placeholder="Paste your MapTiler API key" aria-label="MapTiler API Key" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="onMaptilerKeyInput();">
@@ -215,6 +216,36 @@
         <hr id="tileSettingsHr" style="width: 100%; border-color: #333; margin: 5px 0;">
         <div id="projectNameDiv"><div class="label">Project Folder Name</div><input type="text" id="projectName" value="MyLocalField" maxlength="32" aria-label="Project Folder Name" oninput="if(this.value.length>32)this.value=this.value.slice(0,32);saveSettings();const status=document.getElementById('status');if(status&&status.innerText.startsWith('Error: Please enter a Project Folder Name.'))status.innerText='';"></div>
         
+        <div id="exportOptionsDiv" style="display:none; flex-direction:column; gap:15px;">
+            <div>
+                <div class="label">Export Folder (inside ZIP)</div>
+                <input type="text" id="exportFolder" value="{provider}_{type}" maxlength="64" aria-label="Export Folder" oninput="updateExportPreview(); saveSettings();">
+            </div>
+            <div class="zoom-row">
+                <div>
+                    <div class="label">Tile Path Order</div>
+                    <select id="exportOrder" onchange="updateExportMode(); saveSettings();">
+                        <option value="zxy" selected>Z / X / Y (OSM)</option>
+                        <option value="zyx">Z / Y / X (ESRI)</option>
+                        <option value="custom">Custom pattern</option>
+                    </select>
+                </div>
+                <div>
+                    <div class="label">Image Format</div>
+                    <select id="exportFormat" onchange="updateExportPreview(); triggerUpdate(); saveSettings();">
+                        <option value="jpg" selected>JPEG 80%</option>
+                        <option value="png">PNG (lossless)</option>
+                    </select>
+                </div>
+            </div>
+            <div id="exportPatternDiv" style="display:none;">
+                <div class="label">Custom Tile Path Pattern</div>
+                <input type="text" id="exportPattern" value="{z}/{x}/{y}" maxlength="96" aria-label="Custom Tile Path Pattern" oninput="updateExportPreview(); saveSettings();">
+                <div style="font-size:10px; color:#888; margin-top:4px; line-height:1.45;">Placeholders: {z} {x} {y}, optional {provider} {type}. The file extension is added automatically.</div>
+            </div>
+            <div id="exportPathPreview" style="font-size:10px; color:#888; margin-top:-8px; line-height:1.45; word-break:break-all;"></div>
+        </div>
+
         <div id="zoomRowDiv" class="zoom-row">
             <div>
                 <div class="label">Min Zoom</div>
@@ -324,6 +355,10 @@
                 yaapuSubTarget: document.getElementById('yaapuSubTarget') ? document.getElementById('yaapuSubTarget').value : 'FrSkyTelemetryScript',
                 terrainSource: document.getElementById('terrainSource') ? document.getElementById('terrainSource').value : 'reearth',
                 terrainFormat: document.getElementById('terrainFormat') ? document.getElementById('terrainFormat').value : 'ter',
+                exportFolder: document.getElementById('exportFolder').value,
+                exportOrder: document.getElementById('exportOrder').value,
+                exportPattern: document.getElementById('exportPattern').value,
+                exportFormat: document.getElementById('exportFormat').value,
                 rememberOn: true
             };
             localStorage.setItem('mapGenSettings', JSON.stringify(settings));
@@ -353,6 +388,10 @@
             if(s.provider) provider.value = s.provider;
             if(s.terrainSource) { const tsEl = document.getElementById('terrainSource'); if(tsEl) tsEl.value = s.terrainSource; }
             if(s.terrainFormat) { const tfEl = document.getElementById('terrainFormat'); if(tfEl) tfEl.value = s.terrainFormat; }
+            if(typeof s.exportFolder === 'string') document.getElementById('exportFolder').value = s.exportFolder;
+            if(s.exportOrder) document.getElementById('exportOrder').value = s.exportOrder;
+            if(typeof s.exportPattern === 'string') document.getElementById('exportPattern').value = s.exportPattern;
+            if(s.exportFormat) document.getElementById('exportFormat').value = s.exportFormat;
             syncMapOptions();
             if(s.yaapuSubTarget) { const el = document.getElementById('yaapuSubTarget'); if(el) el.value = s.yaapuSubTarget; }
             if(s.mapType) mapTypeChoice.value = s.mapType;
@@ -361,6 +400,7 @@
             if(s.maxZoom) maxZoom.value = s.maxZoom;
             if(s.mapCenter) map.setView([s.mapCenter.lat, s.mapCenter.lng], s.mapZoom || 12);
             switchMapLayer();
+            updateExportPreview();
         }
 
         /* Enable or disable persistent settings storage from the UI toggle. */
@@ -397,6 +437,10 @@
             if (terrainSourceRestore) terrainSourceRestore.value = 'reearth';
             const terrainFormatRestore = document.getElementById('terrainFormat');
             if (terrainFormatRestore) terrainFormatRestore.value = 'ter';
+            document.getElementById('exportFolder').value = EXPORT_DEFAULT_FOLDER;
+            document.getElementById('exportOrder').value = 'zxy';
+            document.getElementById('exportPattern').value = EXPORT_ORDER_PATTERNS.zxy;
+            document.getElementById('exportFormat').value = 'jpg';
             syncMapOptions();
             mapTypeChoice.value = 'Street';
             projectName.value = 'MyLocalField';
@@ -404,6 +448,7 @@
             maxZoom.value = '14';
             map.setView([42.6977, 23.3219], 12);
             switchMapLayer();
+            updateExportPreview();
         }
 
         /* Responsive layout helpers keep the side panel usable on smaller screens. */
@@ -664,6 +709,87 @@
             if (status && status.innerText.startsWith('Error: Please enter your MapTiler')) { status.innerText = ''; status.style.color = ''; }
         }
 
+        /*
+         * Custom tile export: full-resolution tiles in a user-defined folder layout.
+         * It is not tied to any widget and is always delivered as a ZIP download.
+         */
+        const EXPORT_TILE_SIZE = 256;
+        const EXPORT_DEFAULT_FOLDER = '{provider}_{type}';
+        const EXPORT_ORDER_PATTERNS = { zxy: '{z}/{x}/{y}', zyx: '{z}/{y}/{x}' };
+        const EXPORT_ZIP_WARN_BYTES = 500 * 1024 * 1024;
+        /* Typical satellite tile sizes at 256x256, only used to warn before very large in-memory ZIP exports. */
+        const EXPORT_AVG_TILE_BYTES = { jpg: 30 * 1024, png: 190 * 1024 };
+
+        function isExportMode() { return document.getElementById('targetWidget').value === 'export'; }
+
+        /* Tile edge length, encoding and file extension written for the given target. */
+        function getOutputProfile(target) {
+            if (target === 'export') {
+                return document.getElementById('exportFormat').value === 'png'
+                    ? { size: EXPORT_TILE_SIZE, mime: 'image/png', quality: undefined, ext: 'png', label: 'PNG' }
+                    : { size: EXPORT_TILE_SIZE, mime: 'image/jpeg', quality: 0.8, ext: 'jpg', label: 'JPEG' };
+            }
+            // Yaapu 256x256 tiles (upstream issue #6) are not enabled: the Yaapu widgets do not read them yet.
+            // To enable, add a tile size selector for the Yaapu target and return this profile for it:
+            //   if (target === 'yaapu' && yaapuTileSize === 256) return { size: 256, mime: 'image/jpeg', quality: 0.8, ext: 'jpg', label: 'JPEG' };
+            // Both b14ckyy and Yaapu widgets read 100x100 JPEG (.jpg) tiles.
+            return { size: 100, mime: 'image/jpeg', quality: (target === 'b14ckyy') ? 0.7 : 0.8, ext: 'jpg', label: 'JPEG' };
+        }
+
+        /* Split a user-entered path into safe segments: no "..", no drive letters, no reserved characters. */
+        function sanitizePathSegments(path) {
+            return path.split(/[\\/]+/)
+                .map(s => s.replace(/[<>:"|?*\x00-\x1f]/g, '_').trim().replace(/[. ]+$/, ''))
+                .filter(Boolean);
+        }
+
+        /* Resolve the export folder and tile path pattern from the UI. `error` is set when they are unusable. */
+        function getExportConfig(provider, mapType) {
+            const profile = getOutputProfile('export');
+            const fillNames = s => s.replace(/\{provider\}/gi, provider).replace(/\{type\}/gi, mapType);
+            const order = document.getElementById('exportOrder').value;
+            const pattern = (EXPORT_ORDER_PATTERNS[order] || document.getElementById('exportPattern').value.trim()).replace(/\.(jpe?g|png)$/i, '');
+            const folder = sanitizePathSegments(fillNames(document.getElementById('exportFolder').value.trim() || EXPORT_DEFAULT_FOLDER));
+            const patternSegs = sanitizePathSegments(fillNames(pattern));
+            let error = '';
+            if (!folder.length) error = 'Export folder name is not usable.';
+            else if (!['z', 'x', 'y'].every(t => new RegExp(`\\{${t}\\}`, 'i').test(pattern))) error = 'Tile path pattern must contain {z}, {x} and {y}.';
+            return { folder, patternSegs, ext: profile.ext, error };
+        }
+
+        /* Build the path of one exported tile; `z`, `x`, `y` may also be display placeholders. */
+        function getExportTilePath(cfg, z, x, y) {
+            const segs = cfg.patternSegs.map(s => s.replace(/\{z\}/gi, z).replace(/\{x\}/gi, x).replace(/\{y\}/gi, y));
+            segs[segs.length - 1] += `.${cfg.ext}`;
+            return [...cfg.folder, ...segs];
+        }
+
+        /* Show the resulting ZIP layout (or the reason it is invalid) below the export options. */
+        function updateExportPreview() {
+            const preview = document.getElementById('exportPathPreview');
+            if (!preview || !isExportMode()) return;
+            const cfg = getExportConfig(document.getElementById('provider').value, document.getElementById('mapTypeChoice').value);
+            preview.style.color = cfg.error ? '#ff5252' : '#888';
+            preview.innerText = cfg.error || `ZIP layout: ${getExportTilePath(cfg, '{z}', '{x}', '{y}').join('/')}`;
+            const status = document.getElementById('status');
+            if (!cfg.error && status && status.innerText.startsWith('Error: Export')) { status.innerText = ''; status.style.color = ''; }
+        }
+
+        /* Show the export options and swap the SD card controls for the ZIP-only export action. */
+        function updateExportMode() {
+            const isExport = isExportMode();
+            document.getElementById('exportOptionsDiv').style.display = isExport ? 'flex' : 'none';
+            document.getElementById('exportPatternDiv').style.display = document.getElementById('exportOrder').value === 'custom' ? '' : 'none';
+            document.getElementById('linkSDBtn').style.display = isExport ? 'none' : '';
+            if (isExport) document.getElementById('fsApiWarning').style.display = 'none';
+            else checkFSAccessSupport();
+            const syncBtn = document.getElementById('syncBtn');
+            const syncLabel = isExport ? 'Export as ZIP' : 'Sync to SD Card';
+            syncBtn.innerText = `${isExport ? '📦' : '⚡'} ${syncLabel}`;
+            syncBtn.setAttribute('aria-label', syncLabel);
+            updateExportPreview();
+        }
+
         /* Start in a safe default mode that does not depend on premium imagery providers. */
         let currentLayer = osmLayer; currentLayer.addTo(map);
 
@@ -703,6 +829,7 @@
             if (maptilerKeyDiv) maptilerKeyDiv.style.display = (provider === 'MAPTILER' && target !== 'terrain') ? 'block' : 'none';
 
             rebuildZoomSelectors(PROVIDER_MAX_ZOOM[provider] || 20);
+            updateExportMode();
             updateTerrainMode();
         }
 
@@ -894,8 +1021,9 @@
             else { labels.width.setLatLng(midT).setIcon(L.divIcon({ className: 'side-label', html: wS })); labels.height.setLatLng(midL).setIcon(L.divIcon({ className: 'side-label', html: hS })); }
             const maxZoomTiles = calculateTiles(bounds, maxZ, maxZ);
             const status = document.getElementById('status');
+            const outProfile = getOutputProfile(document.getElementById('targetWidget').value);
             if (status) {
-                let html = `<span style="color:#ffeb3b">Area: ${formatArea(area)}</span><br><span style="color:#87b025">Total Sync Tiles (100x100 JPEG): ${tiles.toLocaleString()}</span>`;
+                let html = `<span style="color:#ffeb3b">Area: ${formatArea(area)}</span><br><span style="color:#87b025">Total ${isExportMode() ? 'Export' : 'Sync'} Tiles (${outProfile.size}x${outProfile.size} ${outProfile.label}): ${tiles.toLocaleString()}</span>`;
                 if (maxZoomTiles < 64) {
                     html += `<br><span style="color:#ff5252">⚠️ Low tile coverage at max zoom (${maxZoomTiles} tiles). Consider increasing max zoom.</span>`;
                 }
@@ -1224,7 +1352,8 @@
         }
 
         /* Build the output folder structure for the selected target widget format. */
-        function getTilePath(target, isZipMode, provider, mapType, z, x, y) {
+        function getTilePath(target, isZipMode, provider, mapType, z, x, y, exportCfg) {
+            if (target === 'export') return getExportTilePath(exportCfg, z, x, y);
             const displayZoom = z.toString();
             if (target === 'b14ckyy') {
                 const base = isZipMode ? ["ethosmaps", "maps"] : ["bitmaps", "ethosmaps", "maps"];
@@ -1240,27 +1369,27 @@
                 return ["IMAGES", "yaapu", "maps", yaapuMapName, displayZoom, `${y}`, `s_${x}.jpg`];
             }
             const base = isZipMode ? ["yaapu", "maps"] : ["bitmaps", "yaapu", "maps"];
+            // Yaapu 256x256 (upstream issue #6): the proposed layout keeps those tiles in a "_256x256"
+            // folder below the map folder, i.e. [...base, yaapuMapName, '_256x256', displayZoom, `${y}`, `s_${x}.jpg`]
+            // (same for the EdgeTX path above). Not enabled until the widgets support it.
             return [...base, yaapuMapName, displayZoom, `${y}`, `s_${x}.jpg`];
         }
 
         /* Each worker uses its own canvas to avoid shared-state issues during parallel processing. */
-        function createWorkerCanvas() {
+        function createWorkerCanvas(size) {
             const canvas = document.createElement('canvas');
-            canvas.width = 100;
-            canvas.height = 100;
+            canvas.width = size;
+            canvas.height = size;
             return { canvas, ctx: canvas.getContext('2d') };
         }
 
-        /* Convert a resized tile canvas into a blob for storage or ZIP export. */
-        function canvasToBlob(canvas, target) {
-            // Both b14ckyy and Yaapu widgets read JPEG (.jpg) tiles.
-            const mimeType = 'image/jpeg';
-            const quality = (target === 'b14ckyy') ? 0.7 : 0.8;
+        /* Convert a tile canvas into a blob for storage or ZIP export, encoded as the output profile asks. */
+        function canvasToBlob(canvas, profile) {
             return new Promise((resolve, reject) => {
                 canvas.toBlob(blob => {
                     if (!blob) return reject(new Error('Canvas conversion failed'));
                     resolve(blob);
-                }, mimeType, quality);
+                }, profile.mime, profile.quality);
             });
         }
 
@@ -1308,19 +1437,20 @@
             throw lastError || new Error('Verified file write failed');
         }
 
-        /* Download and resize a single tile, adding label overlay imagery where required. */
-        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, target) {
+        /* Download a single tile and scale it to the output profile size, adding label overlay imagery where required. */
+        async function fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, profile) {
+            const size = profile.size;
             const img = await loadImage(getTileUrl(provider, mapType, z, x, y));
-            ctx.clearRect(0, 0, 100, 100);
-            ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, 0, 0, 100, 100);
+            ctx.clearRect(0, 0, size, size);
+            ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, 0, 0, size, size);
             if (provider === 'ESRI' && mapType === 'Hybrid') {
                 const labelUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/${z}/${y}/${x}`;
                 try {
                     const labelImg = await loadImage(labelUrl);
-                    ctx.drawImage(labelImg, 0, 0, 256, 256, 0, 0, 100, 100);
+                    ctx.drawImage(labelImg, 0, 0, 256, 256, 0, 0, size, size);
                 } catch (e) {}
             }
-            const blob = await canvasToBlob(canvas, target);
+            const blob = await canvasToBlob(canvas, profile);
             if (!isLikelyValidTileBlob(blob)) {
                 throw new Error('Generated tile blob failed integrity check');
             }
@@ -1330,12 +1460,12 @@
         /* Retry transient tile download failures before declaring a tile lost.
          * Fast-fails (under 1.5s) indicate server rejection (e.g. 403 rate-limit),
          * so retries are skipped to avoid hammering the provider. */
-        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, target) {
+        async function fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, profile) {
             let lastError = null;
             for (let attempt = 0; attempt <= MAX_TILE_RETRIES; attempt++) {
                 const t0 = Date.now();
                 try {
-                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, target);
+                    return await fetchResizedTileBlob(provider, mapType, z, x, y, canvas, ctx, profile);
                 } catch (err) {
                     lastError = err;
                     const elapsed = Date.now() - t0;
@@ -1367,6 +1497,29 @@
 
         /* Allow the running export job to stop cleanly between tile operations. */
         function abortSync() { syncAborted = true; closeSync(); }
+
+        /* Target name and example output path shown in the confirmation and completion dialogs. */
+        function getTargetDisplayName(target) {
+            if (target === 'export') {
+                const profile = getOutputProfile(target);
+                return `Custom Tile Export (${profile.size}x${profile.size} ${profile.label})`;
+            }
+            return target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
+        }
+        function getExamplePath(target, provider, mapType) {
+            if (target === 'export') return getExportTilePath(getExportConfig(provider, mapType), '[Zoom]', '[X]', '[Y]').join('/');
+            if (target === 'b14ckyy') {
+                return provider === 'ESRI'
+                    ? `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].jpg`
+                    : `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].jpg`;
+            }
+            const yaapuMapName = (mapType === 'Satellite') ? 'GoogleSatelliteMap' : (mapType === 'Hybrid' ? 'GoogleHybridMap' : 'GoogleMap');
+            const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
+            const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
+            return yaapuSubTarget === 'HorusMappingWidget'
+                ? `/IMAGES/yaapu/maps/${yaapuMapName}/[Zoom]/[Y]/s_[X].jpg`
+                : `/bitmaps/yaapu/maps/${yaapuMapName}/[Zoom]/[Y]/s_[X].jpg`;
+        }
 
         /* Show the export confirmation dialog with a summary of the current selection. */
         function startSync() {
@@ -1421,6 +1574,19 @@
                 if (keyEl) keyEl.focus();
                 return;
             }
+            // Custom tile export: block on an unusable folder name or tile path pattern
+            const isExport = isExportMode();
+            if (isExport) {
+                const exportCfg = getExportConfig(document.getElementById('provider').value, document.getElementById('mapTypeChoice').value);
+                if (exportCfg.error) {
+                    if (status) {
+                        status.textContent = `Error: Export settings. ${exportCfg.error}`;
+                        status.style.color = '#ff5252';
+                    }
+                    document.getElementById(exportCfg.folder.length ? 'exportPattern' : 'exportFolder').focus();
+                    return;
+                }
+            }
             // Restore color for normal status
             if (status && status.style.color === 'rgb(255, 82, 82)') status.style.color = '';
             // Remove error message if present
@@ -1428,45 +1594,34 @@
                 status.innerText = '';
             }
             syncAborted = false;
-            document.getElementById('modalHeader').innerText = "Syncing to SD Card";
+            document.getElementById('modalHeader').innerText = isExport ? "Custom Tile Export" : "Syncing to SD Card";
             document.getElementById('overwriteSection').style.display = 'flex';
             document.getElementById('progressSection').style.display = 'none';
             document.getElementById('modalActions').style.display = 'flex';
-            document.getElementById('mainConfirmBtn').innerText = "Confirm Sync";
+            document.getElementById('mainConfirmBtn').innerText = isExport ? "Download ZIP" : "Confirm Sync";
             document.getElementById('mainConfirmBtn').onclick = handleConfirmClick;
             const target = document.getElementById('targetWidget').value, provider = document.getElementById('provider').value, mapType = document.getElementById('mapTypeChoice').value, projectName = document.getElementById('projectName').value, bounds = layer.getBounds(), minZ = document.getElementById('minZoom').value, maxZ = document.getElementById('maxZoom').value;
             const areaValue = formatArea(L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]));
             
-            let displayMapType = mapType;
-            if (target === 'yaapu') {
-                if (mapType === 'Satellite') displayMapType = 'GoogleSatelliteMap';
-                else if (mapType === 'Hybrid') displayMapType = 'GoogleHybridMap';
-                else displayMapType = 'GoogleMap';
-            }
-
-            let targetPath;
-            if (target === 'b14ckyy') {
-                if (provider === 'ESRI') {
-                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].jpg`;
-                } else {
-                    targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].jpg`;
+            const targetPath = getExamplePath(target, provider, mapType);
+            const targetDisplayName = getTargetDisplayName(target);
+            const totalTiles = calculateTiles(bounds, parseInt(minZ), parseInt(maxZ));
+            let exportNote = '';
+            if (isExport) {
+                const estBytes = totalTiles * EXPORT_AVG_TILE_BYTES[getOutputProfile(target).ext];
+                if (estBytes > EXPORT_ZIP_WARN_BYTES) {
+                    const estSize = estBytes >= 1073741824 ? `${(estBytes / 1073741824).toFixed(1)} GB` : `${Math.round(estBytes / 1048576)} MB`;
+                    exportNote = `<div style="font-size:12px; color:#ff9800; margin-top:10px; line-height:1.4;">⚠️ Large export (roughly ${estSize}). All tiles are kept in memory until the ZIP is written. Reduce the area or the max zoom if the browser runs out of memory.</div>`;
                 }
-            } else {
-                const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
-                const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
-                targetPath = yaapuSubTarget === 'HorusMappingWidget'
-                    ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`
-                    : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`;
             }
-
-            const targetDisplayName = target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
             document.getElementById('syncInfo').innerHTML = `
                 <div class="sync-info-row"><span>Target Widget:</span><span>${targetDisplayName}</span></div>
-                <div class="sync-info-row"><span>Total Tiles:</span><span>${calculateTiles(bounds, parseInt(minZ), parseInt(maxZ)).toLocaleString()}</span></div>
+                <div class="sync-info-row"><span>Total Tiles:</span><span>${totalTiles.toLocaleString()}</span></div>
                 <div class="sync-info-row"><span>Project Name:</span><span>${projectName}</span></div>
                 <div class="sync-info-row"><span>Zoom Range:</span><span>${minZ} - ${maxZ}</span></div>
                 <div class="sync-info-row"><span>Area:</span><span>${areaValue}</span></div>
                 <div class="sync-info-row"><span>Example Path:</span><span style="font-size:10px;">${targetPath}</span></div>
+                ${exportNote}
             `;
             document.getElementById('syncOverlay').style.display = 'flex';
         }
@@ -1478,6 +1633,10 @@
         function handleConfirmClick() {
             if (isTerrainMode()) {
                 startTerrainSync();
+                return;
+            }
+            if (isExportMode()) {
+                confirmSync();
                 return;
             }
             if (!sdHandle) {
@@ -1497,15 +1656,18 @@
          */
         async function confirmSync() {
             syncAborted = false;
-            if (sdHandle) {
+            const target = document.getElementById('targetWidget').value;
+            /* The custom tile export is always delivered as a ZIP, even while an SD card is linked. */
+            const outHandle = (target === 'export') ? null : sdHandle;
+            if (outHandle) {
                 try {
-                    const permission = await sdHandle.queryPermission({mode: 'readwrite'});
+                    const permission = await outHandle.queryPermission({mode: 'readwrite'});
                     if (permission !== 'granted') throw new Error("Permission lost");
                 } catch (e) {
                     resetSDButton(); alert("SD Card connection lost. Please link it again."); closeSync(); return;
                 }
             }
-            const isZipMode = !sdHandle, target = document.getElementById('targetWidget').value;
+            const isZipMode = !outHandle;
             document.getElementById('modalHeader').innerText = isZipMode ? "Downloading ZIP" : "Syncing Project";
             document.getElementById('modalActions').style.display = 'none';
             document.getElementById('overwriteSection').style.display = 'none';
@@ -1513,6 +1675,9 @@
             
             const provider = document.getElementById('provider').value, mapType = document.getElementById('mapTypeChoice').value, layer = drawnItems.getLayers()[0], bounds = layer.getBounds(), minZ = parseInt(document.getElementById('minZoom').value), maxZ = parseInt(document.getElementById('maxZoom').value);
             const forceOverwrite = document.getElementById('overwriteToggle').checked, zip = isZipMode ? new JSZip() : null;
+            const profile = getOutputProfile(target), exportCfg = (target === 'export') ? getExportConfig(provider, mapType) : null;
+            /* Cached tile blobs are only reusable for the same output size and format. */
+            const cachePrefix = `${profile.size}/${profile.ext}/`;
             const tiles = [];
             for (let z = minZ; z <= maxZ; z++) {
                 const xMin = lon2tile(bounds.getWest(), z), xMax = lon2tile(bounds.getEast(), z), yMin = lat2tile(bounds.getNorth(), z), yMax = lat2tile(bounds.getSouth(), z);
@@ -1554,7 +1719,7 @@
             const workerCount = Math.max(1, Math.min(TILE_CONCURRENCY, tiles.length));
 
             const workers = Array.from({ length: workerCount }, async () => {
-                const { canvas, ctx } = createWorkerCanvas();
+                const { canvas, ctx } = createWorkerCanvas(profile.size);
                 while (!syncAborted) {
                     if (consecutiveErrors >= 5) await sleep(1500);
                     else if (consecutiveErrors >= 2) await sleep(500);
@@ -1562,16 +1727,16 @@
                     if (currentIndex >= tiles.length) break;
 
                     const { z, x, y } = tiles[currentIndex];
-                    const tileId = `${provider}/${mapType}/${z}/${x}/${y}`;
+                    const tileId = `${cachePrefix}${provider}/${mapType}/${z}/${x}/${y}`;
                     try {
                         if (!zipCache[tileId] || forceOverwrite) {
-                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, target);
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, profile);
                         }
                         consecutiveErrors = 0;
 
-                        const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y);
-                        if (sdHandle) {
-                            let currentDir = sdHandle;
+                        const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y, exportCfg);
+                        if (outHandle) {
+                            let currentDir = outHandle;
                             for (let i = 0; i < pathArr.length - 1; i++) {
                                 currentDir = await currentDir.getDirectoryHandle(pathArr[i], { create: true });
                             }
@@ -1612,19 +1777,19 @@
 
                 let retryRecovered = 0, retryIndex = 0;
                 const retryWorkers = Array.from({ length: Math.max(1, Math.min(2, retryCount)) }, async () => {
-                    const { canvas, ctx } = createWorkerCanvas();
+                    const { canvas, ctx } = createWorkerCanvas(profile.size);
                     while (!syncAborted) {
                         const ci = retryIndex++;
                         if (ci >= failedTiles.length) break;
                         await sleep(400);
 
                         const { z, x, y } = failedTiles[ci];
-                        const tileId = `${provider}/${mapType}/${z}/${x}/${y}`;
+                        const tileId = `${cachePrefix}${provider}/${mapType}/${z}/${x}/${y}`;
                         try {
-                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, target);
-                            const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y);
-                            if (sdHandle) {
-                                let currentDir = sdHandle;
+                            zipCache[tileId] = await fetchResizedTileBlobWithRetry(provider, mapType, z, x, y, canvas, ctx, profile);
+                            const pathArr = getTilePath(target, isZipMode, provider, mapType, z, x, y, exportCfg);
+                            if (outHandle) {
+                                let currentDir = outHandle;
                                 for (let i = 0; i < pathArr.length - 1; i++) {
                                     currentDir = await currentDir.getDirectoryHandle(pathArr[i], { create: true });
                                 }
@@ -1658,9 +1823,15 @@
                 if (target === 'yaapu') {
                     const yst = document.getElementById('yaapuSubTarget');
                     targetLabel = (yst && yst.value === 'HorusMappingWidget') ? 'Yaapu-EdgeTX' : 'Yaapu-ETHOS';
+                } else if (target === 'export') {
+                    targetLabel = `Custom-${profile.size}`;
                 }
                 const safeName = projName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'MapTiles';
                 saveAs(await zip.generateAsync({type: "blob"}), `${safeName}_${targetLabel}.zip`);
+            }
+            /* Full-resolution tiles are large: drop them from the in-memory cache once the ZIP is complete. */
+            if (target === 'export' && failedCount === 0) {
+                Object.keys(zipCache).forEach(k => { if (k.startsWith(cachePrefix)) delete zipCache[k]; });
             }
             if (!syncAborted) {
                 if (failedCount > 0) {
@@ -1671,30 +1842,8 @@
                 } else {
                     // Show confirmation modal with same layout as pre-sync
                     // Gather info for summary
-                    const target = document.getElementById('targetWidget').value;
-                    const provider = document.getElementById('provider').value;
-                    const mapType = document.getElementById('mapTypeChoice').value;
                     const projectName = document.getElementById('projectName').value;
-                    let displayMapType = mapType;
-                    if (target === 'yaapu') {
-                        if (mapType === 'Satellite') displayMapType = 'GoogleSatelliteMap';
-                        else if (mapType === 'Hybrid') displayMapType = 'GoogleHybridMap';
-                        else displayMapType = 'GoogleMap';
-                    }
-                    let targetPath;
-                    if (target === 'b14ckyy') {
-                        if (provider === 'ESRI') {
-                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[Y]/[X].jpg`;
-                        } else {
-                            targetPath = `/bitmaps/ethosmaps/maps/${provider}/${mapType}/[Zoom]/[X]/[Y].jpg`;
-                        }
-                    } else {
-                        const yaapuSubTargetEl = document.getElementById('yaapuSubTarget');
-                        const yaapuSubTarget = yaapuSubTargetEl ? yaapuSubTargetEl.value : 'FrSkyTelemetryScript';
-                        targetPath = yaapuSubTarget === 'HorusMappingWidget'
-                            ? `/IMAGES/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`
-                            : `/bitmaps/yaapu/maps/${displayMapType}/[Zoom]/[Y]/s_[X].jpg`;
-                    }
+                    const targetPath = getExamplePath(target, provider, mapType);
                     // Try to get area and zooms from last sync
                     let areaValue = '';
                     let minZ = '', maxZ = '', totalTiles = '';
@@ -1707,8 +1856,9 @@
                             totalTiles = calculateTiles(layer.getBounds(), parseInt(minZ), parseInt(maxZ)).toLocaleString();
                         }
                     } catch (e) {}
-                    document.getElementById('modalHeader').innerText = 'Sync Complete!';
-                    const confirmTargetDisplayName = target === 'b14ckyy' ? 'b14ckyy' : `Yaapu / ${(document.getElementById('yaapuSubTarget') || {value: 'FrSkyTelemetryScript'}).value}`;
+                    document.getElementById('modalHeader').innerText = (target === 'export') ? 'Export Complete!' : 'Sync Complete!';
+                    const confirmTargetDisplayName = getTargetDisplayName(target);
+                    const completeMsg = (target === 'export') ? 'Export complete! The ZIP download has started.' : 'Sync complete! All tiles exported successfully.';
                     document.getElementById('syncInfo').innerHTML = `
                         <div class="sync-info-row"><span>Target Widget:</span><span>${confirmTargetDisplayName}</span></div>
                         <div class="sync-info-row"><span>Total Tiles:</span><span>${totalTiles}</span></div>
@@ -1716,7 +1866,7 @@
                         <div class="sync-info-row"><span>Zoom Range:</span><span>${minZ} - ${maxZ}</span></div>
                         <div class="sync-info-row"><span>Area:</span><span>${areaValue}</span></div>
                         <div class="sync-info-row"><span>Example Path:</span><span style="font-size:10px;">${targetPath}</span></div>
-                        <div style='margin:18px 0 0 0; text-align:center; color:#87b025; font-size:16px; font-weight:bold;'>Sync complete! All tiles exported successfully.</div>
+                        <div style='margin:18px 0 0 0; text-align:center; color:#87b025; font-size:16px; font-weight:bold;'>${completeMsg}</div>
                     `;
                     document.getElementById('progressSection').style.display = 'none';
                     document.getElementById('overwriteSection').style.display = 'none';
