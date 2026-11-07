@@ -1,6 +1,6 @@
 ## High-Resolution Map Generator
 
-This is a web-based tool for generating and exporting 100x100 map tiles from high-resolution map providers, designed for RC pilots and hobbyists using **b14ckyy ETHOS Mapping Widget** or **Yaapu mapping widgets** on their radios. It also supports generating **Terrain** elevation data files for INAV flight controllers (**.TER**, the default) or ArduPilot (**.DAT**), from either **Re:Earth** (default) or **NASA SRTM** elevation data. It enables quick, straightforward operation by selection of a flying area and direct download of compatible map tiles or terrain files to your SD card or as a ZIP file for later transfer.
+This is a web-based tool for generating and exporting 100x100 map tiles from high-resolution map providers, designed for RC pilots and hobbyists using **b14ckyy ETHOS Mapping Widget** or **Yaapu mapping widgets** on their radios. It also supports generating **Terrain** elevation data files for INAV flight controllers (**.TER**, the default) or ArduPilot (**.DAT**), from either **Re:Earth** (default) or **NASA SRTM** elevation data. A **Custom Tile Export** delivers full-resolution 256x256 tiles as a ZIP, for use in other map software. It enables quick, straightforward operation by selection of a flying area and direct download of compatible map tiles or terrain files to your SD card or as a ZIP file for later transfer.
 
 ⚠️ **You can use the tool online without downloading** by visiting: [https://martinovem.github.io/High-Resolution-Map-Generator/](https://martinovem.github.io/High-Resolution-Map-Generator/)
 
@@ -50,15 +50,17 @@ This is a web-based tool for generating and exporting 100x100 map tiles from hig
 	 - Output path: `/IMAGES/yaapu/maps/{GoogleMapType}/{Zoom}/{Y}/s_{X}.jpg`
 	 - **Note:** For both Yaapu sub-targets, regardless of the selected provider (including ESRI or OSM), the output folder will always use the "Google" naming convention (`GoogleMap`, `GoogleSatelliteMap`, or `GoogleHybridMap`). This is required for compatibility with the Yaapu widget. For example, if you select ESRI as the provider and Satellite as the map type, the output will still be placed in `.../GoogleSatelliteMap/...` even though the tiles are from ESRI. This applies equally to Yaapu - ETHOS (`/bitmaps/yaapu/maps/...`) and Yaapu - EdgeTX (`/IMAGES/yaapu/maps/...`).
 	- **[Terrain](https://github.com/iNavFlight/inav/wiki/Navigation-Terrain-Following):** `.TER` (INAV Terrain, default) or `.DAT` (ArduPilot) elevation files for the flight controller SD card — see the dedicated **Terrain** section below.
-	- **Offline Tile Export (256x256, ZIP):** full-resolution tiles for local use, not tied to any widget — see the dedicated **Offline Tile Export** section below.
+	- **Custom Tile Export (256x256, ZIP):** full-resolution tiles in your own folder layout, not tied to any widget — see the dedicated **Custom Tile Export** section below.
+	 - Output format: JPEG 80% quality or PNG
+	 - Output path (inside the ZIP): `/{Export Folder}/{Zoom}/{X}/{Y}.jpg` (or `.png`) by default; `{Zoom}/{Y}/{X}` or a custom pattern can be selected
 - **Direct SD Card Sync:** If your browser supports the File System Access API (Chrome; Edge), write tiles directly to your SD card.
 - **ZIP Download Fallback:** If SD card access is not available, the tool will offer a ZIP download for manual transfer.
 
 ---
 
-## Offline Tile Export
+## Custom Tile Export
 
-Export the selected area as full-resolution **256x256** tiles for local use, for example as an offline tile folder for other map software. Provider, map type, zoom range and area work exactly as for the widget targets, and multi-layer maps such as ESRI Hybrid are still merged into one tile. The export is always delivered as a ZIP download.
+Export the selected area as full-resolution **256x256** tiles in a folder layout of your choice, for example for other map software. Provider, map type, zoom range and area work exactly as for the widget targets, and multi-layer maps such as ESRI Hybrid are still merged into one tile. The export is always delivered as a ZIP download.
 
 | Option | Values |
 |---|---|
@@ -68,8 +70,9 @@ Export the selected area as full-resolution **256x256** tiles for local use, for
 | **Image Format** | JPEG 80% (default) or PNG (lossless, several times larger) |
 
 - Every provider is written in the selected order — ESRI's native `Z/Y/X` tile order is converted like all others.
-- Resulting path: `{Export Folder}/{Tile Path}.jpg` or `.png`, e.g. `ESRI_Hybrid/14/8580/5736.jpg`. The ZIP is named `{Project Name}_Offline-256.zip`.
+- Resulting path: `{Export Folder}/{Tile Path}.jpg` or `.png`, e.g. `ESRI_Hybrid/14/8580/5736.jpg`. The ZIP is named `{Project Name}_Custom-256.zip`.
 - All tiles are kept in memory until the ZIP is written. The tool warns before very large exports — reduce the area or the max zoom if the browser runs out of memory.
+- Please respect the map providers' terms of use — most of them restrict bulk downloading and storing of their tiles.
 
 ---
 
@@ -130,15 +133,15 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 	- Extract the ZIP and open `HighResMapDownloader.html` in your browser, or simple double-click.
 
 2. **Link Your SD Card**
-	- (Optional) Click "Link SD Card" (or "Link FC SD Card" for INAV Terrain) to connect your SD card for direct export.
+	- (Optional) Click "Link SD Card" (or "Link FC SD Card" for INAV Terrain) to connect your SD card for direct export. Not used by **Custom Tile Export**, which always downloads a ZIP.
 
 3. **Select Output Target**
-	- Choose the widget type based on the Lua script installed on your radio (**b14ckyy** or **Yaapu**), select **Terrain** to generate elevation data for your flight controller, or select **Offline Tile Export** for full-resolution 256x256 tiles as a ZIP.
+	- Choose the widget type based on the Lua script installed on your radio (**b14ckyy** or **Yaapu**), select **Terrain** to generate elevation data for your flight controller, or select **Custom Tile Export** for full-resolution 256x256 tiles as a ZIP.
 
 4. **Set Project Name**
 
 5. **Set Provider and Map Type**
-	- For b14ckyy and Yaapu targets, select the map provider and type.
+	- For b14ckyy, Yaapu and Custom Tile Export targets, select the map provider and type.
 	- If you choose **MapTiler**, paste your free MapTiler API key into the box that appears — you only need to enter it once. Get a free key at [maptiler.com](https://www.maptiler.com/).
 	- For **Terrain**, use the **Provider** picker to choose the elevation source — **Re:Earth** (default) or **Mapzen (NASA) SRTM** — and the **Output Format** picker to choose **.TER (INAV Terrain)** (default) or **.DAT (ArduPilot)**. The map is automatically set to OSM (map tiles are not exported — only elevation data).
 
@@ -172,7 +175,7 @@ So **Re:Earth is roughly twice as accurate as SRTM** on bare ground and is the m
 
 	 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0ffde6b7-4b6e-43f0-9975-ed1528dccd2a" />
 
-	 - **For Offline Tile Export:** Set the export folder, tile path order and image format, then click "Export as ZIP" and confirm with "Download ZIP".
+	 - **For Custom Tile Export:** Set the export folder, tile path order and image format, then click "Export as ZIP" and confirm with "Download ZIP".
 
 	 - **For Terrain:** Click "Sync to SD Card" to generate the terrain files in the selected **Output Format** (`.TER` or `.DAT`). The tool downloads elevation data from the selected source (Re:Earth or SRTM), converts it, and writes the files directly to the flight controller SD card root. If no SD card is linked, a ZIP file (`INAV_Terrain_ReEarth.zip` or `INAV_Terrain_SRTM.zip`) will be offered for download. A 1°×1° grid overlay on the map shows which tiles will be generated. Each tile is approximately 30 MB.
 
